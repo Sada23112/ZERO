@@ -36,19 +36,24 @@ class OpenUrlTool(BaseTool):
             name=self.name,
             description=self.description,
             parameters={
-                "url": ToolParameter(type="string", description="Web URL to open (e.g. 'https://python.org')")
+                "url": ToolParameter(type="string", description="Web URL to open (e.g. 'https://python.org' or 'youtube')")
             }
         )
 
     async def execute(self, call_id: str, arguments: Dict[str, Any]) -> ToolResult:
-        url = arguments.get("url")
-        if not url:
+        raw_url = arguments.get("url", "").strip()
+        if not raw_url:
             return ToolResult(call_id=call_id, tool_name=self.name, success=False, error="Argument 'url' is required.")
 
+        # Normalize URL shortcuts (e.g. 'youtube' -> 'https://youtube.com')
+        url = raw_url
         if not url.startswith("http://") and not url.startswith("https://"):
-            url = f"https://{url}"
+            if "." not in url:
+                url = f"https://{url}.com"
+            else:
+                url = f"https://{url}"
 
-        # 1. Open the real native desktop web browser window for the user
+        # 1. Open the real native desktop web browser window on the user's monitor
         try:
             webbrowser.open(url)
             logger.info(f"Opened desktop browser for URL: {url}")
@@ -87,15 +92,15 @@ class OpenUrlTool(BaseTool):
                     return ToolResult(
                         call_id=call_id,
                         tool_name=self.name,
-                        success=False,
-                        error=f"HTTP {resp.status_code} for {url}"
+                        success=True,
+                        output=f"Opened desktop browser for {url} (HTTP {resp.status_code})"
                     )
         except Exception as err:
             return ToolResult(
                 call_id=call_id,
                 tool_name=self.name,
                 success=True,
-                output=f"Opened desktop browser for {url} (HTTP fetch error: {err})"
+                output=f"Opened desktop browser for {url}"
             )
 
 

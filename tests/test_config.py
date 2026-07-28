@@ -8,7 +8,7 @@ from config import ZeroSettings
 def test_zero_settings_defaults():
     settings = ZeroSettings()
     assert settings.default_provider == "gemini"
-    assert settings.default_model == "gemini-2.5-flash"
+    assert settings.default_model == "gemini-3.5-flash-lite"
     assert settings.log_level == "INFO"
     assert settings.debug is False
 

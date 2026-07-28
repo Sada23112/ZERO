@@ -15,7 +15,7 @@ class ZeroSettings(BaseSettings):
 
     gemini_api_key: str = Field(default="", validation_alias="GEMINI_API_KEY")
     default_provider: str = Field(default="gemini", validation_alias="DEFAULT_PROVIDER")
-    default_model: str = Field(default="gemini-2.5-flash", validation_alias="DEFAULT_MODEL")
+    default_model: str = Field(default="gemini-3.5-flash-lite", validation_alias="DEFAULT_MODEL")
     database_path: str = Field(default="data/zero.db", validation_alias="DATABASE_PATH")
     log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
     debug: bool = Field(default=False, validation_alias="DEBUG")

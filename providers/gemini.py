@@ -11,11 +11,9 @@ from models.model import DiscoveredModel
 from models.conversation import Message, MessageRole
 from zero_logging import logger
 
-FALLBACK_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
-
 
 class GeminiProvider(BaseProvider):
-    """Google Gemini API Provider featuring mandatory dynamic model discovery & rate limit failover."""
+    """Google Gemini API Provider featuring dynamic model discovery & automatic model failover."""
 
     def __init__(self, api_key: str):
         self.api_key = api_key
@@ -64,7 +62,7 @@ class GeminiProvider(BaseProvider):
                                 )
                             )
 
-                    # Sort models so stable & latest versions appear first
+                    # Sort models so flash & latest models appear first
                     discovered.sort(key=self._model_sort_key, reverse=True)
 
                     self._cached_models = discovered
@@ -91,7 +89,9 @@ class GeminiProvider(BaseProvider):
         else:
             version_score = 1.0
 
-        if "flash" in model_id:
+        if "lite" in model_id:
+            version_score += 6.0
+        elif "flash" in model_id:
             version_score += 5.0
         elif "pro" in model_id:
             version_score += 4.0
@@ -101,6 +101,29 @@ class GeminiProvider(BaseProvider):
 
         return version_score
 
+    async def _get_models_to_try(self, preferred_model: Optional[str] = None) -> List[str]:
+        """Fetch dynamically discovered model IDs for resilient failover."""
+        discovered = await self.discover_models()
+        valid_ids = [m.id for m in discovered] if discovered else []
+
+        # Default priority sequence if discovery fails
+        fallback_defaults = [
+            "gemini-3.5-flash-lite",
+            "gemini-3.6-flash",
+            "gemini-3.5-flash",
+            "gemini-3.1-flash-lite",
+            "gemini-1.5-flash"
+        ]
+
+        candidate_list = valid_ids if valid_ids else fallback_defaults
+
+        if preferred_model and preferred_model in candidate_list:
+            # Place preferred model first
+            candidate_list.remove(preferred_model)
+            return [preferred_model] + candidate_list
+
+        return candidate_list
+
     async def generate_response(
         self,
         messages: List[Message],
@@ -108,40 +131,12 @@ class GeminiProvider(BaseProvider):
         system_instruction: Optional[str] = None,
         **kwargs: Any
     ) -> str:
-        """Generate content from Gemini model API with robust failover across models."""
+        """Generate content from Gemini API trying dynamically discovered models with automatic failover."""
         if not self.api_key or not self.api_key.strip():
             return "[Error: Gemini API key is missing. Update GEMINI_API_KEY in .env.]"
 
-        primary_model = model or "gemini-2.5-flash"
-        models_to_try = [primary_model] + [m for m in FALLBACK_MODELS if m != primary_model]
+        target_models = await self._get_models_to_try(model)
 
-        # 1. Try google-genai SDK first
-        if self._client:
-            for target_model in models_to_try:
-                try:
-                    contents_sdk = []
-                    for msg in messages:
-                        if msg.role == MessageRole.SYSTEM:
-                            system_instruction = msg.content
-                            continue
-                        role_str = "user" if msg.role == MessageRole.USER else "model"
-                        contents_sdk.append({"role": role_str, "parts": [{"text": msg.content}]})
-
-                    config_dict = {}
-                    if system_instruction:
-                        config_dict["system_instruction"] = system_instruction
-
-                    response = self._client.models.generate_content(
-                        model=target_model,
-                        contents=contents_sdk,
-                        config=config_dict if config_dict else None
-                    )
-                    if response and response.text:
-                        return response.text
-                except Exception as sdk_err:
-                    logger.debug(f"SDK generate_content failed for {target_model}: {sdk_err}")
-
-        # 2. Direct HTTP REST API Fallback
         contents_http: List[Dict[str, Any]] = []
         for msg in messages:
             if msg.role == MessageRole.SYSTEM:
@@ -153,8 +148,9 @@ class GeminiProvider(BaseProvider):
         if not contents_http:
             return "[Error: No user messages provided for generation.]"
 
-        for target_model in models_to_try:
+        for target_model in target_models:
             try:
+                # 1. Try REST API endpoint
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:generateContent?key={self.api_key.strip()}"
                 payload: Dict[str, Any] = {"contents": contents_http}
 
@@ -172,7 +168,7 @@ class GeminiProvider(BaseProvider):
                                 return parts[0]["text"]
                         return "[Empty response from Gemini API]"
                     elif resp.status_code in [404, 429]:
-                        logger.warning(f"HTTP {resp.status_code} on model '{target_model}'. Trying next fallback model...")
+                        logger.warning(f"HTTP {resp.status_code} on model '{target_model}'. Trying next dynamic fallback model...")
                         await asyncio.sleep(0.3)
                         continue
                     else:
@@ -181,7 +177,7 @@ class GeminiProvider(BaseProvider):
             except Exception as err:
                 logger.error(f"Gemini generateContent error for {target_model}: {err}")
 
-        return "[Error: Could not generate response from Gemini API. Please verify your API key.]"
+        return "[Error: Rate limit or quota exceeded across available Gemini models. Please wait a moment.]"
 
     async def stream_generate(
         self,
@@ -190,45 +186,64 @@ class GeminiProvider(BaseProvider):
         system_instruction: Optional[str] = None,
         **kwargs: Any
     ) -> AsyncGenerator[str, None]:
-        """Stream response text chunks from Gemini API with automatic fallback."""
+        """Stream response text chunks from Gemini API with dynamic model failover."""
         if not self.api_key or not self.api_key.strip():
             yield "[Error: Gemini API key is missing. Set GEMINI_API_KEY in .env.]"
             return
 
-        target_model = model or "gemini-2.5-flash"
+        target_models = await self._get_models_to_try(model)
 
-        # 1. Try SDK streaming
-        if self._client:
+        contents_http: List[Dict[str, Any]] = []
+        for msg in messages:
+            if msg.role == MessageRole.SYSTEM:
+                system_instruction = msg.content
+                continue
+            role_str = "user" if msg.role == MessageRole.USER else "model"
+            contents_http.append({"role": role_str, "parts": [{"text": msg.content}]})
+
+        if not contents_http:
+            yield "[Error: No contents provided]"
+            return
+
+        for target_model in target_models:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:streamGenerateContent?key={self.api_key.strip()}&alt=sse"
+            payload: Dict[str, Any] = {"contents": contents_http}
+            if system_instruction:
+                payload["systemInstruction"] = {"parts": [{"text": system_instruction}]}
+
             try:
-                contents_sdk = []
-                for msg in messages:
-                    if msg.role == MessageRole.SYSTEM:
-                        system_instruction = msg.content
-                        continue
-                    role_str = "user" if msg.role == MessageRole.USER else "model"
-                    contents_sdk.append({"role": role_str, "parts": [{"text": msg.content}]})
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    async with client.stream("POST", url, json=payload) as response:
+                        if response.status_code in [404, 429]:
+                            logger.warning(f"HTTP {response.status_code} on streaming model '{target_model}'. Trying next model...")
+                            await asyncio.sleep(0.3)
+                            continue
+                        elif response.status_code != 200:
+                            yield f"[Error streaming from Gemini: HTTP {response.status_code}]"
+                            return
+                        else:
+                            chunk_received = False
+                            async for line in response.aiter_lines():
+                                if line.startswith("data: "):
+                                    json_str = line[6:].strip()
+                                    if json_str == "[DONE]":
+                                        break
+                                    try:
+                                        data = json.loads(json_str)
+                                        candidates = data.get("candidates", [])
+                                        if candidates and "content" in candidates[0]:
+                                            parts = candidates[0]["content"].get("parts", [])
+                                            if parts and "text" in parts[0]:
+                                                chunk_received = True
+                                                yield parts[0]["text"]
+                                    except Exception:
+                                        pass
+                            if chunk_received:
+                                return
 
-                config_dict = {}
-                if system_instruction:
-                    config_dict["system_instruction"] = system_instruction
+            except Exception as err:
+                logger.warning(f"Streaming failed for {target_model}: {err}")
 
-                response_stream = self._client.models.generate_content_stream(
-                    model=target_model,
-                    contents=contents_sdk,
-                    config=config_dict if config_dict else None
-                )
-
-                chunk_yielded = False
-                for chunk in response_stream:
-                    if chunk.text:
-                        chunk_yielded = True
-                        yield chunk.text
-
-                if chunk_yielded:
-                    return
-            except Exception as sdk_stream_err:
-                logger.debug(f"SDK streaming failed: {sdk_stream_err}. Falling back to standard generation.")
-
-        # 2. Fallback to standard response generation if streaming fails or 404/429
+        # Final fallback to generate_response
         fallback_text = await self.generate_response(messages, model=model, system_instruction=system_instruction)
         yield fallback_text
