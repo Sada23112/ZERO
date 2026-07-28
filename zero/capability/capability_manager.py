@@ -27,6 +27,7 @@ from zero.capability.marketplace import CapabilityMarketplace
 
 
 from zero.system_control import system_control_manager, SystemControlManager
+from zero.accounts import account_manager, AccountManager
 
 class CapabilityManager:
     """Central manager providing runtime capability resolution and dynamic re-architecture."""
@@ -44,6 +45,7 @@ class CapabilityManager:
         self.rollback_engine = CapabilityRollbackEngine(self.registry)
         self.marketplace = CapabilityMarketplace()
         self.system_control = system_control_manager
+        self.account_manager = account_manager
 
         # Initialize default baseline capabilities
         self._initialize_baseline_capabilities()
@@ -128,6 +130,18 @@ class CapabilityManager:
         )
         self.registry.register(sys_manifest, instance=self.system_control)
         self.dependency_graph.add_capability("system_control", version="1.0.0")
+
+        # 7. Baseline Connected Accounts Manager (Phase 10)
+        acct_manifest = CapabilityManifest(
+            name="account_manager",
+            category=CapabilityCategory.STORAGE,
+            version="1.0.0",
+            description="Connected Accounts & External Services Framework",
+            enabled=True,
+            instance=self.account_manager,
+        )
+        self.registry.register(acct_manifest, instance=self.account_manager)
+        self.dependency_graph.add_capability("account_manager", version="1.0.0")
 
         # Save initial checkpoint for rollback
         self.rollback_engine.save_checkpoint("baseline_initialization")
@@ -242,12 +256,17 @@ class CapabilityManager:
             success, msg = self.rollback_engine.rollback_last_upgrade()
             return f"[Phase 8 Rollback] {msg}"
 
-        # 5. Phase 9 Operating System Control Commands
+        # 5. Phase 10 Connected Accounts Commands
+        acct_res = self.account_manager.process_account_command(clean_p)
+        if acct_res is not None:
+            return acct_res
+
+        # 6. Phase 9 Operating System Control Commands
         sys_res = self.system_control.process_system_command(clean_p)
         if sys_res is not None:
             return sys_res
 
-        # 6. Self-Extension ("Support XYZ")
+        # 7. Self-Extension ("Support XYZ")
         if cmd_lower.startswith("support ") or "install provider" in cmd_lower or "replace ocr" in cmd_lower or "replace the planner" in cmd_lower:
             ext_target = clean_p.replace("Support", "").replace("support", "").strip()
             return f"[Phase 8 Self-Extension] Capability extension for '{ext_target}' evaluated, validated, and registered in capability graph."
