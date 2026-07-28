@@ -1,10 +1,12 @@
-"""Project ZERO — Central Brain Coordinator (Phase 6 Context & Awareness).
+"""Project ZERO — Central Brain Coordinator (Phase 7 Operating System Intelligence).
 
 The Brain is the central coordinator of Project ZERO.
-All inputs flow through Brain, which coordinates reasoning, memory retrieval, context awareness, tool execution, and self-evolution.
+All inputs flow through Brain, which coordinates reasoning, memory retrieval, context awareness, OS intelligence, tool execution, and self-evolution.
 """
 
+import os
 import asyncio
+from pathlib import Path
 from typing import AsyncGenerator, Optional, Dict, Any, List
 from config import get_settings, ZeroSettings
 from memory.database import DatabaseManager
@@ -28,6 +30,8 @@ from evolution.capability_detector import CapabilityDetector
 from evolution.rollback import RollbackEngine
 from evolution.repair_engine import SelfRepairEngine
 from awareness.context_manager import ContextManager, SystemContext
+from operating_system.system_context import OSSystemContext
+from operating_system.desktop_environment import DesktopEnvironment
 from providers.gemini import GeminiProvider
 from providers.registry import ProviderRegistry, provider_registry
 from tools.registry import ToolRegistry, tool_registry
@@ -36,7 +40,7 @@ from zero_logging import logger
 
 
 class Brain:
-    """Central Coordinator for reasoning, awareness, memory retrieval, tool execution, provider invocation, & self-evolution."""
+    """Central Coordinator for reasoning, OS awareness, memory retrieval, tool execution, provider invocation, & self-evolution."""
 
     def __init__(
         self,
@@ -51,6 +55,9 @@ class Brain:
 
         # Phase 6 Awareness Subsystem
         self.context_manager = ContextManager()
+
+        # Phase 7 OS Intelligence Subsystem
+        self.os_context = OSSystemContext()
 
         self.context_builder = ContextBuilder(self.memory_repo, self.conv_repo, self.context_manager)
         self.conversation_manager = ConversationManager(self.conv_repo)
@@ -82,36 +89,40 @@ class Brain:
         self.tool_registry = tool_registry
 
     async def process(self, prompt: str) -> str:
-        """Process user input through memory retrieval, context building, awareness triggers, tool execution, and LLM reasoning."""
+        """Process user input through OS intelligence, awareness, tool execution, self-evolution, and LLM reasoning."""
         clean_prompt = prompt.strip()
         if not clean_prompt:
             return ""
 
-        # Update active session activity
         self.context_manager.session_context.record_activity(clean_prompt)
         self.context_manager.activity_logger.log_event("command", clean_prompt)
 
-        # 1. Handle Phase 6 Awareness & Natural References Triggers
+        # 1. Handle Phase 7 Operating System Intelligence Commands
+        os_intel_res = await self._check_os_intelligence_triggers(clean_prompt)
+        if os_intel_res is not None:
+            return os_intel_res
+
+        # 2. Handle Phase 6 Awareness & Natural References Triggers
         awareness_res = await self._check_awareness_triggers(clean_prompt)
         if awareness_res is not None:
             return awareness_res
 
-        # 2. Handle Explicit Natural Language Memory Triggers
+        # 3. Handle Explicit Natural Language Memory Triggers
         memory_result = await self._check_memory_triggers(clean_prompt)
         if memory_result is not None:
             return memory_result
 
-        # 3. Handle Phase 5 Self-Evolution & Self-Repair Commands
+        # 4. Handle Phase 5 Self-Evolution & Self-Repair Commands
         evolution_cmd_res = await self._check_evolution_commands(clean_prompt)
         if evolution_cmd_res is not None:
             return evolution_cmd_res
 
-        # 4. Handle Explicit Tool Triggers & Missing Capability Detection
+        # 5. Handle Explicit Tool Triggers & Missing Capability Detection
         tool_result = await self._check_tool_triggers(clean_prompt)
         if tool_result is not None:
             return tool_result
 
-        # 5. Standard Cognitive Flow: Context Assembly & Provider Generation
+        # 6. Standard Cognitive Flow: Context Assembly & Provider Generation
         self.conversation_manager.append_message(
             role=MessageRole.USER,
             content=clean_prompt
@@ -132,13 +143,6 @@ class Brain:
             model=self.settings.default_model
         )
 
-        # Record Experience
-        self.context_manager.experience_engine.record_experience(
-            goal=clean_prompt,
-            tools_used=["BrainLLMReasoning"],
-            outcome="success"
-        )
-
         return response_text
 
     async def process_stream(self, prompt: str) -> AsyncGenerator[str, None]:
@@ -149,6 +153,11 @@ class Brain:
             return
 
         self.context_manager.session_context.record_activity(clean_prompt)
+
+        os_res = await self._check_os_intelligence_triggers(clean_prompt)
+        if os_res is not None:
+            yield os_res
+            return
 
         awareness_res = await self._check_awareness_triggers(clean_prompt)
         if awareness_res is not None:
@@ -194,17 +203,72 @@ class Brain:
             model=self.settings.default_model
         )
 
+    async def _check_os_intelligence_triggers(self, prompt: str) -> Optional[str]:
+        """Intercept and resolve Phase 7 Operating System Intelligence commands."""
+        lower = prompt.lower().strip()
+
+        # Application Launching
+        if lower.startswith("open ") or lower.startswith("launch "):
+            app_target = lower.replace("open ", "").replace("launch ", "").strip()
+
+            # 1. Check Standard OS Folders
+            std_dir = self.os_context.path_resolver.get_standard_directory(app_target)
+            if std_dir:
+                DesktopEnvironment.open_path(std_dir)
+                return f"Opened OS directory: {std_dir}"
+
+            # 2. Check Applications
+            launched = self.os_context.app_manager.launch_application(app_target)
+            if launched:
+                return f"Launched application: '{app_target}'"
+
+            # 3. Check Newest File Search
+            if "newest pdf" in lower or "latest pdf" in lower:
+                target_file = self.os_context.path_resolver.resolve_newest_file(category="documents")
+                if target_file:
+                    DesktopEnvironment.open_path(target_file)
+                    return f"Opened newest PDF document: {target_file}"
+
+            if "download" in lower:
+                recent_dls = self.os_context.recent_tracker.get_recent_downloads(limit=1)
+                if recent_dls:
+                    DesktopEnvironment.open_path(recent_dls[0])
+                    return f"Opened recent download: {recent_dls[0]}"
+
+        # OS Storage Analytics
+        if lower in ["show me my largest folders", "show largest folders", "show largest files", "disk space", "storage info"]:
+            rep = self.os_context.storage_manager.get_storage_report()
+            files_str = "\n".join([f"- {f['name']} ({f['size_mb']} MB): {f['path']}" for f in rep.largest_files[:5]])
+            return (
+                f"Storage Intelligence Analytics:\n"
+                f"- Disk Usage: {rep.used_gb} GB used / {rep.total_gb} GB total ({rep.percent_used}%)\n"
+                f"- Free Space: {rep.free_gb} GB\n"
+                f"Largest Files:\n{files_str or '- None over 10MB found.'}"
+            )
+
+        # OS-Wide Project Auto-Discovery
+        if lower.startswith("where is my ") or lower.startswith("find my ") or lower in ["discover projects"]:
+            q = lower.replace("where is my ", "").replace("find my ", "").replace(" project", "").replace(" projects", "").strip()
+            projs = self.os_context.workspace_manager.discover_projects(max_depth=3)
+            matches = [p for p in projs if q in p.name.lower() or q in p.project_type.lower()]
+            if matches:
+                lines = [f"- {p.name} [{p.project_type}]: {p.path}" for p in matches]
+                return f"Discovered Projects matching '{q}':\n" + "\n".join(lines)
+            elif projs:
+                lines = [f"- {p.name} [{p.project_type}]: {p.path}" for p in projs[:5]]
+                return "Discovered OS Projects:\n" + "\n".join(lines)
+
+        return None
+
     async def _check_awareness_triggers(self, prompt: str) -> Optional[str]:
         """Intercept and resolve Phase 6 Context & Awareness natural language queries."""
         lower = prompt.lower().strip()
 
-        # Greetings & Time Awareness
         if lower in ["good morning", "good afternoon", "good evening", "hello", "hi"]:
             greeting = self.context_manager.calendar_awareness.get_greeting()
             cal = self.context_manager.calendar_awareness.get_current_info()
             return f"{greeting}. Today is {cal['weekday']}, {cal['month']} {cal['year']} ({cal['current_time']}). Active project: {self.context_manager.workspace_awareness.workspace_root.name}."
 
-        # Daily Memory & Temporal References
         if lower in [
             "what did we work on yesterday?",
             "what were we doing before lunch?",
@@ -217,7 +281,6 @@ class Brain:
         if lower in ["summarize today's work", "what happened this morning?", "what happened this afternoon?"]:
             return self.context_manager.daily_memory.get_todays_summary()
 
-        # Experience & Self-Reflection Queries
         if lower in ["what have you learned recently?", "what have you learned from recent repairs?"]:
             ref = self.context_manager.experience_engine.get_reflections()
             return f"Recent Learning Insights:\n{ref['recent_lessons']}"
