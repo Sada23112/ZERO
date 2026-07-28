@@ -3,10 +3,16 @@
 Manages volume level adjustment, mute/unmute status, and audio output device selection.
 """
 
+import os
 import subprocess
 import platform
 from typing import List, Dict, Any, Tuple
 from zero_logging import logger
+
+
+def is_test_mode() -> bool:
+    """Check if test suite or dry-run is active."""
+    return "PYTEST_CURRENT_TEST" in os.environ or os.environ.get("ZERO_DRY_RUN") == "true"
 
 
 class VolumeController:
@@ -35,8 +41,7 @@ class VolumeController:
         self.volume_level = max(0, min(100, level))
         self.is_muted = False
 
-        if platform.system() == "Windows":
-            # Send volume key via PowerShell VK_VOLUME_UP/DOWN or nircmd stub if present
+        if platform.system() == "Windows" and not is_test_mode():
             try:
                 cmd = f"powershell -Command \"(new-object -com wscript.shell).SendKeys([char]175)\""
                 subprocess.run(cmd, shell=True, capture_output=True)
@@ -53,7 +58,7 @@ class VolumeController:
     def mute(self) -> Tuple[bool, str]:
         """Mute system master audio."""
         self.is_muted = True
-        if platform.system() == "Windows":
+        if platform.system() == "Windows" and not is_test_mode():
             try:
                 subprocess.run("powershell -Command \"(new-object -com wscript.shell).SendKeys([char]173)\"", shell=True, capture_output=True)
             except Exception:

@@ -3,10 +3,16 @@
 Manages screen brightness levels, night light settings, and display backlight controls.
 """
 
+import os
 import subprocess
 import platform
 from typing import Tuple, Optional
 from zero_logging import logger
+
+
+def is_test_mode() -> bool:
+    """Check if test suite or dry-run is active."""
+    return "PYTEST_CURRENT_TEST" in os.environ or os.environ.get("ZERO_DRY_RUN") == "true"
 
 
 class BrightnessController:
@@ -28,7 +34,7 @@ class BrightnessController:
         """Set screen brightness percentage level (0-100)."""
         self.brightness_level = max(0, min(100, level))
 
-        if platform.system() == "Windows":
+        if platform.system() == "Windows" and not is_test_mode():
             try:
                 cmd = f"powershell -Command \"(Get-WmiObject -Namespace root/WMI -Class WmiMonitorBrightnessMethods).WmiSetBrightness(1,{self.brightness_level})\""
                 subprocess.run(cmd, shell=True, capture_output=True, timeout=5)

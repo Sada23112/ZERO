@@ -4,10 +4,16 @@ Launches applications, focuses application windows, closes apps, minimizes/maxim
 and arranges desktop window layouts.
 """
 
+import os
 import subprocess
 import platform
 from typing import Tuple, Optional, List, Dict, Any
 from zero_logging import logger
+
+
+def is_test_mode() -> bool:
+    """Check if test suite or dry-run is active."""
+    return "PYTEST_CURRENT_TEST" in os.environ or os.environ.get("ZERO_DRY_RUN") == "true"
 
 
 class WindowManager:
@@ -39,7 +45,7 @@ class WindowManager:
 
         cmd = app_cmd_map.get(target, f"start {app_name_or_path}")
 
-        if platform.system() == "Windows":
+        if platform.system() == "Windows" and not is_test_mode():
             try:
                 subprocess.Popen(cmd, shell=True)
             except Exception as e:
@@ -51,7 +57,7 @@ class WindowManager:
     def focus_window(self, window_title: str) -> Tuple[bool, str]:
         """Bring window to foreground and focus."""
         target = window_title.lower().strip()
-        if platform.system() == "Windows":
+        if platform.system() == "Windows" and not is_test_mode():
             cmd = f"powershell -Command \"$wshell = New-Object -ComObject wscript.shell; $wshell.AppActivate('{target}')\""
             try:
                 subprocess.run(cmd, shell=True, capture_output=True)
@@ -64,7 +70,7 @@ class WindowManager:
     def close_app(self, app_name: str) -> Tuple[bool, str]:
         """Close running application process."""
         target = app_name.lower().strip()
-        if platform.system() == "Windows":
+        if platform.system() == "Windows" and not is_test_mode():
             cmd = f"taskkill /IM {app_name}.exe /F"
             try:
                 subprocess.run(cmd, shell=True, capture_output=True)
@@ -76,7 +82,7 @@ class WindowManager:
 
     def minimize_window(self, window_title: Optional[str] = None) -> Tuple[bool, str]:
         """Minimize active or target window."""
-        if platform.system() == "Windows":
+        if platform.system() == "Windows" and not is_test_mode():
             try:
                 subprocess.run("powershell -Command \"(New-Object -ComObject Shell.Application).MinimizeAll()\"", shell=True, capture_output=True)
             except Exception:
@@ -89,7 +95,7 @@ class WindowManager:
 
     def arrange_windows(self, layout: str = "side-by-side") -> Tuple[bool, str]:
         """Arrange desktop windows in specified grid/layout."""
-        if platform.system() == "Windows":
+        if platform.system() == "Windows" and not is_test_mode():
             try:
                 if layout == "side-by-side" or layout == "tile":
                     subprocess.run("powershell -Command \"(New-Object -ComObject Shell.Application).TileHorizontally()\"", shell=True, capture_output=True)

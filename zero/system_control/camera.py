@@ -11,6 +11,11 @@ from typing import Tuple, Optional
 from zero_logging import logger
 
 
+def is_test_mode() -> bool:
+    """Check if test suite or dry-run is active."""
+    return "PYTEST_CURRENT_TEST" in os.environ or os.environ.get("ZERO_DRY_RUN") == "true"
+
+
 class CameraController:
     """Manages webcams, camera applications, and photo/video capture."""
 
@@ -20,7 +25,7 @@ class CameraController:
     def open_camera(self) -> Tuple[bool, str]:
         """Launch system camera application."""
         self.is_active = True
-        if platform.system() == "Windows":
+        if platform.system() == "Windows" and not is_test_mode():
             try:
                 subprocess.Popen("start microsoft.windows.camera:", shell=True)
             except Exception:

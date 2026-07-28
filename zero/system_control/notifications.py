@@ -3,11 +3,17 @@
 Creates desktop toast notifications, reads system notification queue, and dismisses alerts.
 """
 
+import os
 import time
 import subprocess
 import platform
 from typing import List, Dict, Any, Tuple
 from zero_logging import logger
+
+
+def is_test_mode() -> bool:
+    """Check if test suite or dry-run is active."""
+    return "PYTEST_CURRENT_TEST" in os.environ or os.environ.get("ZERO_DRY_RUN") == "true"
 
 
 class NotificationsManager:
@@ -29,10 +35,9 @@ class NotificationsManager:
         }
         self._active_notifications.append(notif)
 
-        if platform.system() == "Windows":
+        if platform.system() == "Windows" and not is_test_mode():
             cmd = f'powershell -Command "[reflection.assembly]::loadwithpartialname(\'System.Windows.Forms\'); [System.Windows.Forms.MessageBox]::Show(\'{message}\', \'{title}\')"'
             try:
-                # Fire and forget async pop-up or notification log
                 subprocess.Popen(cmd, shell=True)
             except Exception:
                 pass
