@@ -79,12 +79,16 @@ class ConversationRepository:
             conn.commit()
         return message
 
-    def get_session_messages(self, session_id: str) -> List[Message]:
+    def get_session_messages(self, session_id: str, limit: Optional[int] = None) -> List[Message]:
         """Retrieve ordered history of messages for a session."""
         with self.db_manager.get_connection() as conn:
-            rows = conn.execute(
-                "SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC", (session_id,)
-            ).fetchall()
+            query = "SELECT * FROM messages WHERE session_id = ? ORDER BY created_at ASC"
+            params: list = [session_id]
+            if limit:
+                query = "SELECT * FROM (SELECT * FROM messages WHERE session_id = ? ORDER BY created_at DESC LIMIT ?) ORDER BY created_at ASC"
+                params = [session_id, limit]
+
+            rows = conn.execute(query, tuple(params)).fetchall()
             return [
                 Message(
                     id=r["id"],
@@ -106,11 +110,17 @@ class MemoryRepository:
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
 
-    def set_memory(self, key: str, value: str, category: MemoryCategory = MemoryCategory.GENERAL, tags: Optional[List[str]] = None) -> MemoryRecord:
-        """Insert or update a cognitive memory record."""
+    def store(
+        self,
+        key: str,
+        value: str,
+        category: MemoryCategory = MemoryCategory.GENERAL,
+        tags: Optional[List[str]] = None
+    ) -> MemoryRecord:
+        """Store or update a cognitive memory record."""
         tags = tags or []
         existing = self.get_memory_by_key(key)
-        
+
         if existing:
             record = MemoryRecord(
                 id=existing.id,
@@ -152,43 +162,72 @@ class MemoryRepository:
             conn.commit()
         return record
 
+    def set_memory(self, key: str, value: str, category: MemoryCategory = MemoryCategory.GENERAL, tags: Optional[List[str]] = None) -> MemoryRecord:
+        """Alias for store()."""
+        return self.store(key, value, category, tags)
+
     def get_memory_by_key(self, key: str) -> Optional[MemoryRecord]:
         """Fetch memory record by key."""
         with self.db_manager.get_connection() as conn:
             row = conn.execute("SELECT * FROM memories WHERE key = ?", (key,)).fetchone()
             if row:
-                return MemoryRecord(
-                    id=row["id"],
-                    key=row["key"],
-                    value=row["value"],
-                    category=MemoryCategory(row["category"]),
-                    tags=json.loads(row["tags"]) if row["tags"] else [],
-                    created_at=row["created_at"],
-                    updated_at=row["updated_at"],
-                    metadata=json.loads(row["metadata"]) if row["metadata"] else {}
-                )
+                return self._row_to_memory(row)
         return None
 
-    def list_memories(self, category: Optional[MemoryCategory] = None) -> List[MemoryRecord]:
+    def search(self, query: str, limit: int = 10) -> List[MemoryRecord]:
+        """Perform keyword search across memory keys, values, and categories."""
+        pattern = f"%{query}%"
+        with self.db_manager.get_connection() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM memories
+                WHERE key LIKE ? OR value LIKE ? OR category LIKE ? OR tags LIKE ?
+                ORDER BY updated_at DESC LIMIT ?
+                """,
+                (pattern, pattern, pattern, pattern, limit)
+            ).fetchall()
+            return [self._row_to_memory(r) for r in rows]
+
+    def recent(self, limit: int = 10) -> List[MemoryRecord]:
+        """Fetch most recently updated memory records."""
+        with self.db_manager.get_connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM memories ORDER BY updated_at DESC LIMIT ?", (limit,)
+            ).fetchall()
+            return [self._row_to_memory(r) for r in rows]
+
+    def forget(self, key: str) -> bool:
+        """Delete a memory record by key."""
+        with self.db_manager.get_connection() as conn:
+            cursor = conn.execute("DELETE FROM memories WHERE key = ?", (key,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def list(self, category: Optional[MemoryCategory] = None, limit: int = 50) -> List[MemoryRecord]:
         """List memory records, optionally filtered by category."""
         with self.db_manager.get_connection() as conn:
             if category:
                 rows = conn.execute(
-                    "SELECT * FROM memories WHERE category = ? ORDER BY updated_at DESC", (category.value,)
+                    "SELECT * FROM memories WHERE category = ? ORDER BY updated_at DESC LIMIT ?",
+                    (category.value, limit)
                 ).fetchall()
             else:
-                rows = conn.execute("SELECT * FROM memories ORDER BY updated_at DESC").fetchall()
+                rows = conn.execute("SELECT * FROM memories ORDER BY updated_at DESC LIMIT ?", (limit,)).fetchall()
 
-            return [
-                MemoryRecord(
-                    id=r["id"],
-                    key=r["key"],
-                    value=r["value"],
-                    category=MemoryCategory(r["category"]),
-                    tags=json.loads(r["tags"]) if r["tags"] else [],
-                    created_at=r["created_at"],
-                    updated_at=r["updated_at"],
-                    metadata=json.loads(r["metadata"]) if r["metadata"] else {}
-                )
-                for r in rows
-            ]
+            return [self._row_to_memory(r) for r in rows]
+
+    def list_memories(self, category: Optional[MemoryCategory] = None) -> List[MemoryRecord]:
+        """Alias for list()."""
+        return self.list(category)
+
+    def _row_to_memory(self, row: Any) -> MemoryRecord:
+        return MemoryRecord(
+            id=row["id"],
+            key=row["key"],
+            value=row["value"],
+            category=MemoryCategory(row["category"]),
+            tags=json.loads(row["tags"]) if row["tags"] else [],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            metadata=json.loads(row["metadata"]) if row["metadata"] else {}
+        )

@@ -1,7 +1,8 @@
 """Project ZERO — Gemini Provider & Dynamic Model Discovery."""
 
 import re
-from typing import List, Optional, Any, Dict
+import json
+from typing import List, Optional, Any, Dict, AsyncGenerator
 import httpx
 from google import genai
 from providers.base import BaseProvider
@@ -60,7 +61,7 @@ class GeminiProvider(BaseProvider):
                                 )
                             )
 
-                    # Sort models so latest versions (3.6, 3.5, 3.1, 2.5, latest aliases) appear first
+                    # Sort models so latest versions (3.6, 3.5, 3.1, 2.5) appear first
                     discovered.sort(key=self._model_sort_key, reverse=True)
 
                     self._cached_models = discovered
@@ -76,8 +77,6 @@ class GeminiProvider(BaseProvider):
     def _model_sort_key(self, model: DiscoveredModel) -> float:
         """Helper to rank latest Gemini models higher in display tables."""
         model_id = model.id.lower()
-        
-        # Extract version number if present (e.g. gemini-3.6-flash -> 3.6)
         match = re.search(r"gemini-(\d+\.\d+|\d+)", model_id)
         if match:
             try:
@@ -89,7 +88,6 @@ class GeminiProvider(BaseProvider):
         else:
             version_score = 1.0
 
-        # Prioritize flash & pro core text models over single-purpose TTS/Image models
         if "flash" in model_id:
             version_score += 5.0
         elif "pro" in model_id:
@@ -113,7 +111,6 @@ class GeminiProvider(BaseProvider):
 
         target_model = model or "gemini-3.6-flash"
 
-        # Format conversation messages for Gemini API
         contents: List[Dict[str, Any]] = []
         for msg in messages:
             if msg.role == MessageRole.SYSTEM:
@@ -148,3 +145,59 @@ class GeminiProvider(BaseProvider):
         except Exception as err:
             logger.error(f"Gemini generateContent error: {err}")
             return f"[Error during generation: {str(err)}]"
+
+    async def stream_generate(
+        self,
+        messages: List[Message],
+        model: Optional[str] = None,
+        system_instruction: Optional[str] = None,
+        **kwargs: Any
+    ) -> AsyncGenerator[str, None]:
+        """Stream response text chunks from Gemini API."""
+        if not self.api_key or not self.api_key.strip():
+            yield "[Error: Gemini API key is missing.]"
+            return
+
+        target_model = model or "gemini-3.6-flash"
+
+        contents: List[Dict[str, Any]] = []
+        for msg in messages:
+            if msg.role == MessageRole.SYSTEM:
+                system_instruction = msg.content
+                continue
+            role_str = "user" if msg.role == MessageRole.USER else "model"
+            contents.append({"role": role_str, "parts": [{"text": msg.content}]})
+
+        if not contents:
+            yield "[Error: No contents provided]"
+            return
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{target_model}:streamGenerateContent?key={self.api_key.strip()}&alt=sse"
+        payload: Dict[str, Any] = {"contents": contents}
+        if system_instruction:
+            payload["systemInstruction"] = {"parts": [{"text": system_instruction}]}
+
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                async with client.stream("POST", url, json=payload) as response:
+                    if response.status_code != 200:
+                        yield f"[Error streaming from Gemini: HTTP {response.status_code}]"
+                        return
+
+                    async for line in response.aiter_lines():
+                        if line.startswith("data: "):
+                            json_str = line[6:].strip()
+                            if json_str == "[DONE]":
+                                break
+                            try:
+                                data = json.loads(json_str)
+                                candidates = data.get("candidates", [])
+                                if candidates and "content" in candidates[0]:
+                                    parts = candidates[0]["content"].get("parts", [])
+                                    if parts and "text" in parts[0]:
+                                        yield parts[0]["text"]
+                            except Exception:
+                                pass
+        except Exception as err:
+            logger.error(f"Streaming error: {err}")
+            yield f"[Streaming error: {str(err)}]"

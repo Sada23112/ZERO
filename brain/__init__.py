@@ -1,4 +1,7 @@
-"""Project ZERO — Brain & Cognitive System.
+"""Project ZERO — Brain & Cognitive Subsystem Package."""
 
-Manages prompt composition, context window engineering, reasoning loops, and synthesis.
-"""
+from brain.brain import Brain
+from brain.context import ContextBuilder
+from brain.conversation import ConversationManager
+
+__all__ = ["Brain", "ContextBuilder", "ConversationManager"]

@@ -1,7 +1,7 @@
 """Project ZERO — Base Provider Abstract Interface."""
 
 from abc import ABC, abstractmethod
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, AsyncGenerator
 from models.model import DiscoveredModel
 from models.conversation import Message
 
@@ -25,6 +25,17 @@ class BaseProvider(ABC):
     ) -> str:
         """Generate response from provider given conversation messages."""
         pass
+
+    @abstractmethod
+    async def stream_generate(
+        self,
+        messages: List[Message],
+        model: Optional[str] = None,
+        system_instruction: Optional[str] = None,
+        **kwargs: Any
+    ) -> AsyncGenerator[str, None]:
+        """Stream chunks of generated text response from provider."""
+        yield ""
 
     @abstractmethod
     async def discover_models(self, force_refresh: bool = False) -> List[DiscoveredModel]:
