@@ -71,6 +71,50 @@ class AccountManager:
         self.registry.register_account(acct)
         return True, f"Successfully connected {st.title()} account '{email}' [{account_category}]."
 
+    def get_valid_credentials(self, account_id: str) -> Optional[Dict[str, Any]]:
+        """Fetch credentials from encrypted store and automatically refresh access token if expired."""
+        creds = self.credentials.load_credentials(account_id)
+        if not creds:
+            return None
+
+        # Auto-refresh check if token expires_at is past or nearing expiry
+        expires_at = creds.get("expires_at", 0)
+        refresh_token = creds.get("refresh_token")
+
+        if refresh_token and (expires_at == 0 or time.time() > (expires_at - 60)):
+            acct = self.registry.get_account(account_id)
+            st = acct.service_type if acct else "google"
+            logger.info(f"[AccountManager] Access token for '{account_id}' expired. Automatically refreshing in background using stored refresh_token...")
+            refreshed = self.oauth.refresh_access_token(st, refresh_token)
+            creds["access_token"] = refreshed["access_token"]
+            creds["expires_at"] = time.time() + refreshed.get("expires_in", 3600)
+            self.credentials.save_credentials(account_id, creds)
+            logger.info(f"[AccountManager] Token refreshed automatically for '{account_id}'. Zero re-authentication required!")
+
+        return creds
+
+    def get_connector_for_account(self, account_id_or_email: str) -> Tuple[Optional[BaseConnector], str]:
+        """Fetch ready-to-use connector initialized with active persistent/refreshed credentials."""
+        target = account_id_or_email.lower().strip()
+        acct = None
+        for a in self.registry.list_accounts():
+            if target in a.account_id.lower() or target in a.email.lower():
+                acct = a
+                break
+
+        if not acct:
+            return None, f"No connected account found matching '{account_id_or_email}'."
+
+        creds = self.get_valid_credentials(acct.account_id)
+        if not creds:
+            return None, f"Credentials not found for account '{acct.email}'."
+
+        connector = self.loader.get_connector(acct.service_type, email=acct.email)
+        if connector:
+            connector.connect(creds)
+            return connector, f"Active session restored for '{acct.email}' ({acct.service_type.title()})."
+        return None, f"Connector for service '{acct.service_type}' could not be initialized."
+
     def disconnect_account(self, account_id_or_email: str) -> Tuple[bool, str]:
         """Revoke and remove connected account."""
         target = account_id_or_email.lower().strip()

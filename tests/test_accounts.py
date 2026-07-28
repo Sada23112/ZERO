@@ -134,3 +134,8 @@ def test_account_manager_end_to_end():
     acct_work, _ = mgr.resolve_account_for_task("google", category_hint="work")
     assert acct_work is not None
     assert acct_work.email == "work@company.com"
+
+    # 5. Persistent Session Restoration & Automatic Token Refresh (No re-login required)
+    connector, msg = mgr.get_connector_for_account("personal@gmail.com")
+    assert connector is not None
+    assert "Active session restored" in msg

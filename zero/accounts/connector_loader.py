@@ -18,6 +18,7 @@ from zero.connectors.notion.connector import NotionConnector
 from zero.connectors.spotify.connector import SpotifyConnector
 
 CONNECTOR_REGISTRY: Dict[str, Type[BaseConnector]] = {
+    "google": GmailConnector,
     "gmail": GmailConnector,
     "google_calendar": GoogleCalendarConnector,
     "google_drive": GoogleDriveConnector,
