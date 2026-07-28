@@ -37,6 +37,7 @@ from providers.registry import ProviderRegistry, provider_registry
 from tools.registry import ToolRegistry, tool_registry
 from models.conversation import Message, MessageRole
 from zero_logging import logger
+from zero.capability import capability_manager, CapabilityManager
 
 
 class Brain:
@@ -81,12 +82,23 @@ class Brain:
         self.rollback_engine = RollbackEngine(registry_store=self.evolution_engine.registry_store)
         self.repair_engine = SelfRepairEngine()
 
+        # Phase 8 Capability Subsystem
+        self.capability_manager = capability_manager
+
         # Provider initialization
         self.provider = GeminiProvider(self.settings.gemini_api_key)
         provider_registry.register_provider(self.provider)
 
         # Tool registry reference
         self.tool_registry = tool_registry
+
+    @property
+    def active_provider(self) -> BaseProvider:
+        """Fetch current active provider from capability manager or default."""
+        p = self.capability_manager.get("provider")
+        if p is not None and hasattr(p, "generate_response"):
+            return p
+        return self.provider
 
     async def process(self, prompt: str) -> str:
         """Process user input through OS intelligence, awareness, tool execution, self-evolution, and LLM reasoning."""
@@ -96,6 +108,11 @@ class Brain:
 
         self.context_manager.session_context.record_activity(clean_prompt)
         self.context_manager.activity_logger.log_event("command", clean_prompt)
+
+        # 0. Handle Phase 8 Dynamic Capability & Reconfiguration Commands
+        cap_cmd_res = self.capability_manager.process_capability_command(clean_prompt)
+        if cap_cmd_res is not None:
+            return cap_cmd_res
 
         # 1. Handle Phase 7 Operating System Intelligence Commands
         os_intel_res = await self._check_os_intelligence_triggers(clean_prompt)
@@ -131,7 +148,7 @@ class Brain:
         system_instruction = self.context_builder.build_system_instruction(clean_prompt)
         history = self.conversation_manager.load_history(limit=10)
 
-        response_text = await self.provider.generate_response(
+        response_text = await self.active_provider.generate_response(
             messages=history,
             model=self.settings.default_model,
             system_instruction=system_instruction
