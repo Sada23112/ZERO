@@ -20,6 +20,18 @@ class ZeroSettings(BaseSettings):
     log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
     debug: bool = Field(default=False, validation_alias="DEBUG")
 
+    # Voice Subsystem Configuration (Phase 3A)
+    voice_enabled: bool = Field(default=True, validation_alias="VOICE_ENABLED")
+    tts_provider: str = Field(default="pyttsx3", validation_alias="TTS_PROVIDER")
+    stt_provider: str = Field(default="system", validation_alias="STT_PROVIDER")
+    voice_name: str = Field(default="default", validation_alias="VOICE_NAME")
+    language: str = Field(default="en-US", validation_alias="LANGUAGE")
+    microphone_device: Optional[str] = Field(default=None, validation_alias="MICROPHONE_DEVICE")
+    speaker_device: Optional[str] = Field(default=None, validation_alias="SPEAKER_DEVICE")
+    wake_word_enabled: bool = Field(default=False, validation_alias="WAKE_WORD_ENABLED")
+    push_to_talk_key: str = Field(default="space", validation_alias="PUSH_TO_TALK_KEY")
+    continuous_mode: bool = Field(default=False, validation_alias="CONTINUOUS_MODE")
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -65,6 +77,12 @@ class ZeroSettings(BaseSettings):
                 f"DATABASE_PATH={self.database_path}\n",
                 f"LOG_LEVEL={self.log_level}\n",
                 f"DEBUG={str(self.debug).lower()}\n",
+                "# Voice Settings\n",
+                f"VOICE_ENABLED={str(self.voice_enabled).lower()}\n",
+                f"TTS_PROVIDER={self.tts_provider}\n",
+                f"STT_PROVIDER={self.stt_provider}\n",
+                f"VOICE_NAME={self.voice_name}\n",
+                f"LANGUAGE={self.language}\n",
             ]
             with open(target_path, "w", encoding="utf-8") as f:
                 f.writelines(lines)

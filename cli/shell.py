@@ -8,22 +8,30 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.prompt import Prompt
 from brain.brain import Brain
+from voice.manager import VoiceManager
+from voice.listener import ActiveListener
 from zero_logging import logger
 
 console = Console()
 
 
 class ZeroShell:
-    """Thin interactive CLI shell delegating input processing to Brain."""
+    """Thin interactive CLI shell delegating input processing to Brain & VoiceManager."""
 
-    def __init__(self, brain: Optional[Brain] = None):
+    def __init__(self, brain: Optional[Brain] = None, voice_manager: Optional[VoiceManager] = None):
         self.brain = brain or Brain()
+        self.voice_manager = voice_manager or VoiceManager()
+        self.active_listener = ActiveListener(
+            brain=self.brain,
+            stt_provider=self.voice_manager.stt_provider,
+            tts_provider=self.voice_manager.tts_provider
+        )
 
     def print_welcome(self):
         """Display ZERO v0.1 welcome header banner."""
         banner = (
             "[bold blue]ZERO v0.1[/bold blue] — Personal Autonomous Intelligence Platform\n"
-            "[dim]Python-First Core Infrastructure • Type 'help' for commands • 'exit' to quit[/dim]"
+            "[dim]Python-First Core Infrastructure • Voice & Active Listening Phase 3A • Type 'help' for commands • 'exit' to quit[/dim]"
         )
         console.print(Panel(banner, border_style="blue", title="[bold white]Project ZERO[/bold white]"))
 
@@ -33,6 +41,13 @@ class ZeroShell:
         table.add_column("Command / Intent", style="bold cyan", no_wrap=True)
         table.add_column("Description", style="white")
 
+        table.add_row("listen", "Start active voice listening loop")
+        table.add_row("mute", "Mute voice Text-to-Speech playback")
+        table.add_row("unmute", "Unmute voice Text-to-Speech playback")
+        table.add_row("voices", "List available TTS voice models")
+        table.add_row("microphones", "List connected microphone input devices")
+        table.add_row("speaker", "List connected speaker output devices")
+        table.add_row("voice settings", "Inspect voice configuration settings")
         table.add_row("help", "Display available shell commands")
         table.add_row("models", "Dynamically discover & list available provider models")
         table.add_row("config", "Inspect current system configuration settings")
@@ -47,6 +62,92 @@ class ZeroShell:
         table.add_row("history", "View session transcript history")
         table.add_row("clear", "Clear terminal console buffer")
         table.add_row("exit / quit", "Terminate ZERO terminal session")
+
+        console.print(table)
+
+    async def cmd_listen(self):
+        """Start active voice listening conversation loop."""
+        console.print("\n[bold green]Active Voice Listening Started...[/bold green] (Speak now or say 'stop listening')\n")
+        
+        def on_speech(user_text: str):
+            console.print(f"[bold cyan]User (Voice):[/bold cyan] {user_text}")
+
+        def on_response(zero_text: str):
+            console.print(f"[bold blue]ZERO (Voice):[/bold blue] {zero_text}\n")
+
+        try:
+            await self.active_listener.start_listening_loop(on_user_speech=on_speech, on_zero_response=on_response)
+        except Exception as err:
+            console.print(f"[bold red]Voice loop error:[/bold red] {err}")
+        finally:
+            console.print("[dim]Active voice listening ended.[/dim]\n")
+
+    def cmd_mute(self):
+        """Mute voice output."""
+        self.active_listener.mute()
+        console.print("[bold yellow]Voice output MUTED.[/bold yellow]")
+
+    def cmd_unmute(self):
+        """Unmute voice output."""
+        self.active_listener.unmute()
+        console.print("[bold green]Voice output UNMUTED.[/bold green]")
+
+    def cmd_voices(self):
+        """Display available TTS voices."""
+        voices = self.voice_manager.list_voices()
+        table = Table(title=f"Available TTS Voices ({len(voices)})", border_style="magenta")
+        table.add_column("Voice ID", style="bold cyan")
+        table.add_column("Voice Name", style="white")
+        table.add_column("Languages", style="dim")
+
+        for v in voices:
+            table.add_row(v.id, v.name, ", ".join(v.languages))
+
+        console.print(table)
+
+    def cmd_microphones(self):
+        """Display connected input audio devices."""
+        mics = self.voice_manager.list_microphones()
+        table = Table(title=f"Input Microphones ({len(mics)})", border_style="cyan")
+        table.add_column("ID", style="bold cyan")
+        table.add_column("Device Name", style="white")
+        table.add_column("Channels", style="dim")
+        table.add_column("Default", style="bold yellow")
+
+        for m in mics:
+            table.add_row(str(m.id), m.name, str(m.max_input_channels), "Yes" if m.is_default else "No")
+
+        console.print(table)
+
+    def cmd_speaker(self):
+        """Display connected output audio devices."""
+        spks = self.voice_manager.list_speakers()
+        table = Table(title=f"Output Speakers ({len(spks)})", border_style="green")
+        table.add_column("ID", style="bold cyan")
+        table.add_column("Device Name", style="white")
+        table.add_column("Channels", style="dim")
+        table.add_column("Default", style="bold yellow")
+
+        for s in spks:
+            table.add_row(str(s.id), s.name, str(s.max_output_channels), "Yes" if s.is_default else "No")
+
+        console.print(table)
+
+    def cmd_voice_settings(self):
+        """Inspect voice settings configuration."""
+        s = self.brain.settings
+        table = Table(title="Voice Settings Configuration", border_style="blue")
+        table.add_column("Setting", style="bold cyan")
+        table.add_column("Value", style="bold white")
+
+        table.add_row("VOICE_ENABLED", str(s.voice_enabled))
+        table.add_row("TTS_PROVIDER", s.tts_provider)
+        table.add_row("STT_PROVIDER", s.stt_provider)
+        table.add_row("VOICE_NAME", s.voice_name)
+        table.add_row("LANGUAGE", s.language)
+        table.add_row("MICROPHONE_DEVICE", s.microphone_device or "Default")
+        table.add_row("SPEAKER_DEVICE", s.speaker_device or "Default")
+        table.add_row("MUTED", "Yes" if self.active_listener.muted else "No")
 
         console.print(table)
 
@@ -86,8 +187,9 @@ class ZeroShell:
         table.add_row("DEFAULT_PROVIDER", s.default_provider)
         table.add_row("DEFAULT_MODEL", s.default_model)
         table.add_row("DATABASE_PATH", s.database_path)
-        table.add_row("LOG_LEVEL", s.log_level)
-        table.add_row("DEBUG", str(s.debug))
+        table.add_row("VOICE_ENABLED", str(s.voice_enabled))
+        table.add_row("TTS_PROVIDER", s.tts_provider)
+        table.add_row("STT_PROVIDER", s.stt_provider)
 
         console.print(table)
 
@@ -120,6 +222,14 @@ class ZeroShell:
 
         console.print("\n")
 
+        # Optionally speak response if voice is unmuted
+        complete_response = "".join(full_text)
+        if not self.active_listener.muted and complete_response:
+            try:
+                await self.voice_manager.tts_provider.speak(complete_response)
+            except Exception:
+                pass
+
     async def run(self):
         """Main thin CLI REPL command loop."""
         self.print_welcome()
@@ -140,6 +250,20 @@ class ZeroShell:
                 elif cmd_lower == "clear":
                     console.clear()
                     self.print_welcome()
+                elif cmd_lower == "listen":
+                    await self.cmd_listen()
+                elif cmd_lower == "mute":
+                    self.cmd_mute()
+                elif cmd_lower == "unmute":
+                    self.cmd_unmute()
+                elif cmd_lower == "voices":
+                    self.cmd_voices()
+                elif cmd_lower == "microphones":
+                    self.cmd_microphones()
+                elif cmd_lower == "speaker":
+                    self.cmd_speaker()
+                elif cmd_lower == "voice settings":
+                    self.cmd_voice_settings()
                 elif cmd_lower == "models":
                     await self.cmd_models()
                 elif cmd_lower == "config":
