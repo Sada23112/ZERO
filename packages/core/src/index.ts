@@ -1,8 +1,8 @@
-export { GeminiClient, StreamCompletionOptions, ChatTurn } from './gemini-client.js';
-export { ChatEngine, ChatEngineOptions } from './chat-engine.js';
-
-export const ZERO_VERSION = '0.1.0-alpha';
+export * from './gemini-client.js';
+export * from './chat-engine.js';
+export * from './config-manager.js';
+export * from './model-discovery.js';
 
 export function getCoreInfo(): string {
-  return `Project ZERO Core Engine v${ZERO_VERSION} (Gemini + Memory + Security Active)`;
+  return 'Project ZERO Core Engine';
 }
