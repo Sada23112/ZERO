@@ -1,4 +1,12 @@
-"""Project ZERO — Planner Subsystem.
+"""Project ZERO — Planning & Task Management Package."""
 
-Decomposes complex multi-step user goals into executable task graphs.
-"""
+from planner.task_manager import TaskManager, TaskItem
+from planner.engine import LongRunningPlanningEngine, ExecutionPlan, PlanStep
+
+__all__ = [
+    "TaskManager",
+    "TaskItem",
+    "LongRunningPlanningEngine",
+    "ExecutionPlan",
+    "PlanStep",
+]

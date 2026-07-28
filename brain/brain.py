@@ -10,8 +10,19 @@ from config import get_settings, ZeroSettings
 from memory.database import DatabaseManager
 from memory.repository import MemoryRepository, ConversationRepository
 from memory.repository import MemoryCategory
+from memory.knowledge_graph import CognitiveKnowledgeGraph
+from memory.project_knowledge import ProjectKnowledgeStore
 from brain.context import ContextBuilder
 from brain.conversation import ConversationManager
+from brain.prompts import PromptLibrary
+from brain.session_replay import SessionReplayer
+from intelligence.codebase import CodebaseIntelligence
+from intelligence.search import SemanticSearchEngine
+from intelligence.research import InternetResearchEngine
+from intelligence.notebook import ResearchNotebook
+from planner.task_manager import TaskManager
+from planner.engine import LongRunningPlanningEngine
+from security.failsafe import FailsafeSystem
 from providers.gemini import GeminiProvider
 from providers.registry import ProviderRegistry, provider_registry
 from tools.registry import ToolRegistry, tool_registry
@@ -36,6 +47,19 @@ class Brain:
         self.context_builder = ContextBuilder(self.memory_repo, self.conv_repo)
         self.conversation_manager = ConversationManager(self.conv_repo)
 
+        # Phase 4 Subsystems
+        self.failsafe = FailsafeSystem()
+        self.knowledge_graph = CognitiveKnowledgeGraph()
+        self.project_knowledge = ProjectKnowledgeStore()
+        self.codebase_intel = CodebaseIntelligence()
+        self.search_engine = SemanticSearchEngine()
+        self.research_engine = InternetResearchEngine()
+        self.research_notebook = ResearchNotebook()
+        self.task_manager = TaskManager()
+        self.planning_engine = LongRunningPlanningEngine()
+        self.prompt_library = PromptLibrary()
+        self.session_replayer = SessionReplayer(self.conv_repo)
+
         # Provider initialization
         self.provider = GeminiProvider(self.settings.gemini_api_key)
         provider_registry.register_provider(self.provider)
@@ -54,30 +78,26 @@ class Brain:
         if memory_result is not None:
             return memory_result
 
-        # 2. Handle Explicit Tool Execution Triggers
+        # 2. Handle Explicit Tool & Capability Execution Triggers
         tool_result = await self._check_tool_triggers(clean_prompt)
         if tool_result is not None:
             return tool_result
 
         # 3. Standard Cognitive Flow: Context Assembly & Provider Generation
-        # Record user message in session
         self.conversation_manager.append_message(
             role=MessageRole.USER,
             content=clean_prompt
         )
 
-        # Build dynamic context and system instruction
         system_instruction = self.context_builder.build_system_instruction(clean_prompt)
         history = self.conversation_manager.load_history(limit=10)
 
-        # Invoke provider
         response_text = await self.provider.generate_response(
             messages=history,
             model=self.settings.default_model,
             system_instruction=system_instruction
         )
 
-        # Persist assistant response
         self.conversation_manager.append_message(
             role=MessageRole.ASSISTANT,
             content=response_text,
@@ -93,19 +113,16 @@ class Brain:
             yield ""
             return
 
-        # Check memory triggers first
         memory_res = await self._check_memory_triggers(clean_prompt)
         if memory_res is not None:
             yield memory_res
             return
 
-        # Check tool triggers
         tool_res = await self._check_tool_triggers(clean_prompt)
         if tool_res is not None:
             yield tool_res
             return
 
-        # Record user message
         self.conversation_manager.append_message(
             role=MessageRole.USER,
             content=clean_prompt
@@ -123,7 +140,6 @@ class Brain:
             full_response.append(chunk)
             yield chunk
 
-        # Persist complete response
         complete_text = "".join(full_response)
         self.conversation_manager.append_message(
             role=MessageRole.ASSISTANT,
@@ -132,24 +148,24 @@ class Brain:
         )
 
     async def _check_memory_triggers(self, prompt: str) -> Optional[str]:
-        """Intercept and handle memory commands (e.g. 'remember that X uses Y', 'list my memories', 'search memory X')."""
+        """Intercept and handle memory commands & knowledge graph queries."""
         lower = prompt.lower()
 
-        # "remember that X uses/is Y" or "remember X"
         if lower.startswith("remember that ") or lower.startswith("remember "):
             content_to_remember = prompt[9:].strip() if lower.startswith("remember ") else prompt[14:].strip()
             if " uses " in content_to_remember:
                 key, val = content_to_remember.split(" uses ", 1)
                 record = self.memory_repo.store(key=key.strip(), value=f"uses {val.strip()}", category=MemoryCategory.PROJECT_FACT)
+                self.knowledge_graph.add_relation(key.strip(), "uses", val.strip())
             elif " is " in content_to_remember:
                 key, val = content_to_remember.split(" is ", 1)
                 record = self.memory_repo.store(key=key.strip(), value=val.strip(), category=MemoryCategory.PROJECT_FACT)
+                self.knowledge_graph.add_relation(key.strip(), "is", val.strip())
             else:
                 record = self.memory_repo.store(key=f"fact_{len(self.memory_repo.list()) + 1}", value=content_to_remember, category=MemoryCategory.GENERAL)
             
-            return f"Recorded memory: {record.key} -> {record.value}"
+            return f"Recorded memory & graph link: {record.key} -> {record.value}"
 
-        # "what framework does X use?" or "what does X use?"
         if lower.startswith("what framework does ") or lower.startswith("what does "):
             subject = lower.replace("what framework does ", "").replace("what does ", "").replace(" use?", "").replace(" use", "").strip()
             matches = self.memory_repo.search(subject)
@@ -157,7 +173,6 @@ class Brain:
                 return f"{matches[0].key.title()} uses {matches[0].value.replace('uses ', '')}."
             return f"No memory record found for '{subject}'."
 
-        # "list my memories" or "list memories"
         if lower in ["list my memories", "list memories"]:
             mems = self.memory_repo.list()
             if not mems:
@@ -165,7 +180,6 @@ class Brain:
             lines = [f"- {m.key}: {m.value} [{m.category.value}]" for m in mems]
             return "Saved Memories:\n" + "\n".join(lines)
 
-        # "search memory X"
         if lower.startswith("search memory "):
             q = prompt[14:].strip()
             mems = self.memory_repo.search(q)
@@ -174,19 +188,88 @@ class Brain:
             lines = [f"- {m.key}: {m.value}" for m in mems]
             return f"Memory search results for '{q}':\n" + "\n".join(lines)
 
+        if lower.startswith("graph ") or lower.startswith("knowledge graph "):
+            q = prompt.split(" ", 2)[-1].strip()
+            res = self.knowledge_graph.query_entity(q)
+            if res["relationships"]:
+                return f"Knowledge Graph Network for '{q}':\n" + "\n".join(res["relationships"])
+            return f"No knowledge graph relationships found for '{q}'."
+
         return None
 
     async def _check_tool_triggers(self, prompt: str) -> Optional[str]:
-        """Intercept and route explicit tool requests (read file, run command, open url, summarize folder)."""
+        """Intercept and route explicit tool & capability requests."""
         lower = prompt.lower()
 
-        # "read <file>"
+        # Git Intelligence
+        if lower.startswith("git ") or lower == "git":
+            sub = lower[4:].strip() if len(lower) > 4 else "status"
+            res = await self.tool_registry.execute_tool("git_call", "git_tool", {"subcommand": sub})
+            return res.output if res.success else f"Git error: {res.error}"
+
+        # Codebase Intelligence
+        if lower in ["analyze project", "analyze codebase"]:
+            analysis = self.codebase_intel.analyze_project()
+            return (
+                f"Codebase Intelligence Report:\n"
+                f"- Total Files: {analysis.total_files}\n"
+                f"- Languages: {', '.join(analysis.languages)}\n"
+                f"- Frameworks/Managers: {', '.join(analysis.package_managers)}\n"
+                f"- Entry Points: {', '.join(analysis.entry_points)}\n"
+                f"- Config Files: {', '.join(analysis.config_files)}"
+            )
+
+        # Semantic Search Engine
+        if lower.startswith("search code ") or lower.startswith("search todo"):
+            if lower == "search todo" or lower == "search todos":
+                matches = self.search_engine.search_todos()
+            else:
+                q = prompt[12:].strip()
+                matches = self.search_engine.search_pattern(q)
+            if not matches:
+                return "No search results found."
+            lines = [f"{m.file_path}:{m.line_number} -> {m.line_content}" for m in matches[:15]]
+            return "Search Results:\n" + "\n".join(lines)
+
+        # Document Reader
+        if lower.startswith("read document ") or lower.startswith("parse doc "):
+            path = prompt.split(" ", 2)[-1].strip()
+            res = await self.tool_registry.execute_tool("doc_call", "document_reader", {"path": path})
+            return res.output if res.success else f"Document error: {res.error}"
+
+        # Vision Screenshot
+        if lower in ["capture screen", "screenshot", "take screenshot"]:
+            res = await self.tool_registry.execute_tool("vis_call", "vision_capture", {})
+            return res.output if res.success else f"Vision error: {res.error}"
+
+        # Process Manager / System Metrics
+        if lower in ["metrics", "system metrics", "cpu usage", "ram usage"]:
+            res = await self.tool_registry.execute_tool("proc_call", "process_manager", {"action": "metrics"})
+            return res.output if res.success else f"Metrics error: {res.error}"
+
+        if lower in ["process list", "list processes"]:
+            res = await self.tool_registry.execute_tool("proc_call", "process_manager", {"action": "list"})
+            return res.output if res.success else f"Process list error: {res.error}"
+
+        # Diagnostics & Health Check (Lazy import to prevent circular dependency)
+        if lower in ["health check", "diagnostics", "system health"]:
+            from cli.diagnostics import SelfDiagnostics
+            report = SelfDiagnostics().run_health_check()
+            return (
+                f"System Health & Diagnostics Report:\n"
+                f"- Database Healthy: {report.database_healthy}\n"
+                f"- Provider Healthy: {report.provider_healthy}\n"
+                f"- Registered Tools: {report.registered_tools_count}\n"
+                f"- Workspace Writable: {report.workspace_writable}\n"
+                f"- Issues Found: {len(report.issues_found)}"
+            )
+
+        # Standard File & Shell Triggers
         if lower.startswith("read ") and not lower.startswith("read this "):
             filename = prompt[5:].strip()
             res = await self.tool_registry.execute_tool("c1", "read_file", {"path": filename})
             return res.output if res.success else f"Error reading file: {res.error}"
 
-        # "summarize <folder>" or "summarize this folder"
         if lower.startswith("summarize "):
             folder = prompt[10:].strip()
             if folder in ["this folder", "src/", "."]:
@@ -196,13 +279,11 @@ class Brain:
                 return f"Summary of folder '{folder}':\n{res.output}"
             return f"Error listing directory: {res.error}"
 
-        # "run <command>"
         if lower.startswith("run ") or lower.startswith("execute "):
             cmd = prompt.split(" ", 1)[1].strip()
             res = await self.tool_registry.execute_tool("c3", "run_command", {"command": cmd})
             return f"[Command Output (exit {0 if res.success else 1})]:\n{res.output}"
 
-        # "open <target>" (e.g. "open youtube", "open python.org", "open https://google.com")
         if lower.startswith("open "):
             target = prompt[5:].strip()
             if target:

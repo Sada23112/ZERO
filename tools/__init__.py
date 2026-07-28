@@ -7,6 +7,16 @@ from tools.filesystem import ReadFileTool, WriteFileTool, ListDirectoryTool, Sea
 from tools.terminal import RunCommandTool
 from tools.browser import OpenUrlTool, ReadPageTextTool, SearchWebTool, ExtractTitleTool, ExtractLinksTool
 
+# Phase 4 Capability Tools
+from tools.git_tool import GitTool
+from tools.document import DocumentReaderTool
+from tools.vision import VisionCaptureTool
+from tools.ocr import ImageOCRTool
+from tools.clipboard import ClipboardTool
+from tools.download import DownloadManagerTool
+from tools.archive import ArchiveTool
+from tools.process import ProcessManagerTool
+
 # Automatically register default core tools
 tool_registry.register_tool(SystemInfoTool())
 tool_registry.register_tool(PingTool())
@@ -28,6 +38,16 @@ tool_registry.register_tool(SearchWebTool())
 tool_registry.register_tool(ExtractTitleTool())
 tool_registry.register_tool(ExtractLinksTool())
 
+# Register Phase 4 tools
+tool_registry.register_tool(GitTool())
+tool_registry.register_tool(DocumentReaderTool())
+tool_registry.register_tool(VisionCaptureTool())
+tool_registry.register_tool(ImageOCRTool())
+tool_registry.register_tool(ClipboardTool())
+tool_registry.register_tool(DownloadManagerTool())
+tool_registry.register_tool(ArchiveTool())
+tool_registry.register_tool(ProcessManagerTool())
+
 __all__ = [
     "BaseTool",
     "ToolRegistry",
@@ -45,4 +65,12 @@ __all__ = [
     "SearchWebTool",
     "ExtractTitleTool",
     "ExtractLinksTool",
+    "GitTool",
+    "DocumentReaderTool",
+    "VisionCaptureTool",
+    "ImageOCRTool",
+    "ClipboardTool",
+    "DownloadManagerTool",
+    "ArchiveTool",
+    "ProcessManagerTool",
 ]
