@@ -1,5 +1,6 @@
 """Project ZERO — Gemini Provider & Dynamic Model Discovery."""
 
+import re
 from typing import List, Optional, Any, Dict
 import httpx
 from google import genai
@@ -58,6 +59,10 @@ class GeminiProvider(BaseProvider):
                                     supported_methods=methods
                                 )
                             )
+
+                    # Sort models so latest versions (3.6, 3.5, 3.1, 2.5, latest aliases) appear first
+                    discovered.sort(key=self._model_sort_key, reverse=True)
+
                     self._cached_models = discovered
                     logger.info(f"Discovered {len(discovered)} Gemini models dynamically.")
                     return discovered
@@ -67,6 +72,33 @@ class GeminiProvider(BaseProvider):
             logger.error(f"Failed dynamic Gemini model discovery: {err}")
 
         return self._cached_models
+
+    def _model_sort_key(self, model: DiscoveredModel) -> float:
+        """Helper to rank latest Gemini models higher in display tables."""
+        model_id = model.id.lower()
+        
+        # Extract version number if present (e.g. gemini-3.6-flash -> 3.6)
+        match = re.search(r"gemini-(\d+\.\d+|\d+)", model_id)
+        if match:
+            try:
+                version_score = float(match.group(1)) * 100.0
+            except ValueError:
+                version_score = 10.0
+        elif "latest" in model_id:
+            version_score = 90.0
+        else:
+            version_score = 1.0
+
+        # Prioritize flash & pro core text models over single-purpose TTS/Image models
+        if "flash" in model_id:
+            version_score += 5.0
+        elif "pro" in model_id:
+            version_score += 4.0
+
+        if "tts" in model_id or "image" in model_id:
+            version_score -= 50.0
+
+        return version_score
 
     async def generate_response(
         self,
@@ -79,7 +111,7 @@ class GeminiProvider(BaseProvider):
         if not self.api_key or not self.api_key.strip():
             return "[Error: Gemini API key is missing. Run `config` command to set key.]"
 
-        target_model = model or "gemini-2.0-flash"
+        target_model = model or "gemini-3.6-flash"
 
         # Format conversation messages for Gemini API
         contents: List[Dict[str, Any]] = []
