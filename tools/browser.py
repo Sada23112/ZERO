@@ -3,6 +3,7 @@
 Opens desktop web browser applications and extracts page text/links.
 """
 
+import re
 import webbrowser
 from typing import Dict, Any, List
 import httpx
@@ -18,6 +19,22 @@ except ImportError:
 
 
 DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+
+def _clean_html_text(html: str) -> str:
+    """Extract clean readable plain text from raw HTML markup."""
+    # Extract title if present
+    title_match = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
+    title = title_match.group(1).strip() if title_match else "Web Page"
+
+    # Strip script and style blocks
+    cleaned = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html, flags=re.IGNORECASE | re.DOTALL)
+    # Strip HTML tags
+    cleaned = re.sub(r"<[^>]+>", " ", cleaned)
+    # Normalize whitespace
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+
+    return f"Title: {title}\n\nContent:\n{cleaned[:800]}"
 
 
 class OpenUrlTool(BaseTool):
@@ -60,7 +77,7 @@ class OpenUrlTool(BaseTool):
         except Exception as browser_err:
             logger.warning(f"Could not launch native desktop browser: {browser_err}")
 
-        # 2. Fetch page content via HTTP or Playwright
+        # 2. Fetch page content via Playwright or HTTP
         if PLAYWRIGHT_AVAILABLE:
             try:
                 async with async_playwright() as p:
@@ -70,7 +87,7 @@ class OpenUrlTool(BaseTool):
                     title = await page.title()
                     body_text = await page.inner_text("body")
                     await browser.close()
-                    out = f"Opened desktop browser for {url}\nTitle: {title}\nContent Snippet:\n{body_text[:1500]}"
+                    out = f"Opened desktop browser for {url}\nTitle: {title}\nContent:\n{body_text[:800]}"
                     return ToolResult(call_id=call_id, tool_name=self.name, success=True, output=out)
             except Exception:
                 pass  # Fallback seamlessly to HTTP client
@@ -81,19 +98,19 @@ class OpenUrlTool(BaseTool):
             async with httpx.AsyncClient(timeout=10.0, follow_redirects=True, headers=headers) as client:
                 resp = await client.get(url)
                 if resp.status_code in [200, 202]:
-                    text_snippet = resp.text[:1500]
+                    clean_text = _clean_html_text(resp.text)
                     return ToolResult(
                         call_id=call_id,
                         tool_name=self.name,
                         success=True,
-                        output=f"Opened desktop browser for {url}\nHTTP {resp.status_code} OK\nContent Snippet:\n{text_snippet}"
+                        output=f"Opened desktop browser for {url}\n{clean_text}"
                     )
                 else:
                     return ToolResult(
                         call_id=call_id,
                         tool_name=self.name,
                         success=True,
-                        output=f"Opened desktop browser for {url} (HTTP {resp.status_code})"
+                        output=f"Opened desktop browser for {url}"
                     )
         except Exception as err:
             return ToolResult(

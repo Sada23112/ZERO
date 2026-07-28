@@ -202,10 +202,11 @@ class Brain:
             res = await self.tool_registry.execute_tool("c3", "run_command", {"command": cmd})
             return f"[Command Output (exit {0 if res.success else 1})]:\n{res.output}"
 
-        # "open <url>"
-        if lower.startswith("open ") and ("." in prompt or "http" in prompt):
-            url = prompt[5:].strip()
-            res = await self.tool_registry.execute_tool("c4", "open_url", {"url": url})
-            return res.output if res.success else f"Error opening URL: {res.error}"
+        # "open <target>" (e.g. "open youtube", "open python.org", "open https://google.com")
+        if lower.startswith("open "):
+            target = prompt[5:].strip()
+            if target:
+                res = await self.tool_registry.execute_tool("c4", "open_url", {"url": target})
+                return res.output if res.success else f"Error opening URL: {res.error}"
 
         return None
