@@ -1,0 +1,19 @@
+{
+  "name": "zero-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Project ZERO - Personal Autonomous Intelligence Platform Monorepo",
+  "author": "Project ZERO Architect",
+  "license": "MIT",
+  "scripts": {
+    "dev": "pnpm --filter @zero/desktop dev",
+    "build": "pnpm --filter \"@zero/*\" build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}

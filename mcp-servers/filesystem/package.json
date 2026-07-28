@@ -1,0 +1,14 @@
+{
+  "name": "@zero/mcp-filesystem",
+  "version": "0.1.0",
+  "description": "Project ZERO Filesystem MCP Tool Server",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}
