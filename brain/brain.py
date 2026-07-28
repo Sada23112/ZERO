@@ -1,7 +1,7 @@
-"""Project ZERO — Central Brain Coordinator (Phase 5).
+"""Project ZERO — Central Brain Coordinator (Phase 6 Context & Awareness).
 
 The Brain is the central coordinator of Project ZERO.
-All inputs flow through Brain, which coordinates reasoning, memory retrieval, tool execution, and self-evolution.
+All inputs flow through Brain, which coordinates reasoning, memory retrieval, context awareness, tool execution, and self-evolution.
 """
 
 import asyncio
@@ -27,6 +27,7 @@ from evolution.engine import EvolutionEngine
 from evolution.capability_detector import CapabilityDetector
 from evolution.rollback import RollbackEngine
 from evolution.repair_engine import SelfRepairEngine
+from awareness.context_manager import ContextManager, SystemContext
 from providers.gemini import GeminiProvider
 from providers.registry import ProviderRegistry, provider_registry
 from tools.registry import ToolRegistry, tool_registry
@@ -35,7 +36,7 @@ from zero_logging import logger
 
 
 class Brain:
-    """Central Coordinator for reasoning, memory retrieval, tool execution, provider invocation, & self-evolution."""
+    """Central Coordinator for reasoning, awareness, memory retrieval, tool execution, provider invocation, & self-evolution."""
 
     def __init__(
         self,
@@ -48,7 +49,10 @@ class Brain:
         self.conv_repo = ConversationRepository(self.db_manager)
         self.memory_repo = MemoryRepository(self.db_manager)
 
-        self.context_builder = ContextBuilder(self.memory_repo, self.conv_repo)
+        # Phase 6 Awareness Subsystem
+        self.context_manager = ContextManager()
+
+        self.context_builder = ContextBuilder(self.memory_repo, self.conv_repo, self.context_manager)
         self.conversation_manager = ConversationManager(self.conv_repo)
 
         # Phase 4 Subsystems
@@ -78,27 +82,36 @@ class Brain:
         self.tool_registry = tool_registry
 
     async def process(self, prompt: str) -> str:
-        """Process user input through memory retrieval, tool execution, self-evolution, and LLM reasoning."""
+        """Process user input through memory retrieval, context building, awareness triggers, tool execution, and LLM reasoning."""
         clean_prompt = prompt.strip()
         if not clean_prompt:
             return ""
 
-        # 1. Handle Explicit Natural Language Memory Triggers
+        # Update active session activity
+        self.context_manager.session_context.record_activity(clean_prompt)
+        self.context_manager.activity_logger.log_event("command", clean_prompt)
+
+        # 1. Handle Phase 6 Awareness & Natural References Triggers
+        awareness_res = await self._check_awareness_triggers(clean_prompt)
+        if awareness_res is not None:
+            return awareness_res
+
+        # 2. Handle Explicit Natural Language Memory Triggers
         memory_result = await self._check_memory_triggers(clean_prompt)
         if memory_result is not None:
             return memory_result
 
-        # 2. Handle Phase 5 Self-Evolution & Self-Repair Commands
+        # 3. Handle Phase 5 Self-Evolution & Self-Repair Commands
         evolution_cmd_res = await self._check_evolution_commands(clean_prompt)
         if evolution_cmd_res is not None:
             return evolution_cmd_res
 
-        # 3. Handle Explicit Tool Triggers & Missing Capability Detection
+        # 4. Handle Explicit Tool Triggers & Missing Capability Detection
         tool_result = await self._check_tool_triggers(clean_prompt)
         if tool_result is not None:
             return tool_result
 
-        # 4. Standard Cognitive Flow: Context Assembly & Provider Generation
+        # 5. Standard Cognitive Flow: Context Assembly & Provider Generation
         self.conversation_manager.append_message(
             role=MessageRole.USER,
             content=clean_prompt
@@ -119,6 +132,13 @@ class Brain:
             model=self.settings.default_model
         )
 
+        # Record Experience
+        self.context_manager.experience_engine.record_experience(
+            goal=clean_prompt,
+            tools_used=["BrainLLMReasoning"],
+            outcome="success"
+        )
+
         return response_text
 
     async def process_stream(self, prompt: str) -> AsyncGenerator[str, None]:
@@ -126,6 +146,13 @@ class Brain:
         clean_prompt = prompt.strip()
         if not clean_prompt:
             yield ""
+            return
+
+        self.context_manager.session_context.record_activity(clean_prompt)
+
+        awareness_res = await self._check_awareness_triggers(clean_prompt)
+        if awareness_res is not None:
+            yield awareness_res
             return
 
         memory_res = await self._check_memory_triggers(clean_prompt)
@@ -167,11 +194,53 @@ class Brain:
             model=self.settings.default_model
         )
 
+    async def _check_awareness_triggers(self, prompt: str) -> Optional[str]:
+        """Intercept and resolve Phase 6 Context & Awareness natural language queries."""
+        lower = prompt.lower().strip()
+
+        # Greetings & Time Awareness
+        if lower in ["good morning", "good afternoon", "good evening", "hello", "hi"]:
+            greeting = self.context_manager.calendar_awareness.get_greeting()
+            cal = self.context_manager.calendar_awareness.get_current_info()
+            return f"{greeting}. Today is {cal['weekday']}, {cal['month']} {cal['year']} ({cal['current_time']}). Active project: {self.context_manager.workspace_awareness.workspace_root.name}."
+
+        # Daily Memory & Temporal References
+        if lower in [
+            "what did we work on yesterday?",
+            "what were we doing before lunch?",
+            "continue yesterday's work",
+            "continue my last project",
+            "resume the interrupted task"
+        ]:
+            return self.context_manager.daily_memory.get_yesterdays_summary()
+
+        if lower in ["summarize today's work", "what happened this morning?", "what happened this afternoon?"]:
+            return self.context_manager.daily_memory.get_todays_summary()
+
+        # Experience & Self-Reflection Queries
+        if lower in ["what have you learned recently?", "what have you learned from recent repairs?"]:
+            ref = self.context_manager.experience_engine.get_reflections()
+            return f"Recent Learning Insights:\n{ref['recent_lessons']}"
+
+        if lower in ["which generated tools are most reliable?", "which tools are most reliable?"]:
+            ref = self.context_manager.experience_engine.get_reflections()
+            rel = ", ".join(ref['reliable_tools'])
+            return f"Most Reliable Subsystems & Tools:\n- {rel}"
+
+        if lower in ["what capabilities fail most often?", "what should you improve?"]:
+            ref = self.context_manager.experience_engine.get_reflections()
+            return f"System Failures & Bottlenecks:\n- {ref['frequent_failures']}"
+
+        if lower in ["what projects do you know best?", "active project"]:
+            ws = self.context_manager.workspace_awareness.get_workspace_info()
+            return f"Known Projects:\n- Active Workspace: {ws['project_name']} ({ws['workspace_root']})\n- Active Branch: {ws['git_branch']}"
+
+        return None
+
     async def _check_evolution_commands(self, prompt: str) -> Optional[str]:
         """Intercept and handle Phase 5 Evolution, Rollback, & Self-Repair commands."""
         lower = prompt.lower().strip()
 
-        # Rollback Commands
         if lower == "rollback last evolution":
             success = self.rollback_engine.rollback_last_evolution()
             return "Successfully rolled back last capability evolution." if success else "No active evolutions to rollback."
@@ -181,7 +250,6 @@ class Brain:
             success = self.rollback_engine.rollback_capability(cap_name)
             return f"Successfully rolled back capability '{cap_name}'." if success else f"Capability '{cap_name}' not found."
 
-        # Audit History & Capability Listing
         if lower in ["show evolution history", "evolution history"]:
             recs = self.evolution_engine.history_store.records
             if not recs:
@@ -196,7 +264,6 @@ class Brain:
             lines = [f"- {c.name} v{c.version}: {c.description}" for c in caps]
             return "Dynamically Generated Active Capabilities:\n" + "\n".join(lines)
 
-        # Self-Repair Commands
         if lower.startswith("repair ") or lower in ["repair yourself", "fix yourself"]:
             target = lower.replace("repair ", "").strip()
             report = self.repair_engine.repair_subsystem(target)
@@ -258,7 +325,6 @@ class Brain:
         """Intercept and route explicit tool & capability requests or trigger self-evolution."""
         lower = prompt.lower()
 
-        # Phase 5 Meta-Reasoning Capability Detection
         det_res = self.capability_detector.detect_capability(prompt)
         if det_res.action_type == "generate_new" and det_res.tool_name:
             evo_res = await self.evolution_engine.evolve_capability(det_res.tool_name, prompt)
@@ -267,13 +333,11 @@ class Brain:
             else:
                 return f"Evolution failed: {evo_res.message}"
 
-        # Git Intelligence
         if lower.startswith("git ") or lower == "git":
             sub = lower[4:].strip() if len(lower) > 4 else "status"
             res = await self.tool_registry.execute_tool("git_call", "git_tool", {"subcommand": sub})
             return res.output if res.success else f"Git error: {res.error}"
 
-        # Codebase Intelligence
         if lower in ["analyze project", "analyze codebase"]:
             analysis = self.codebase_intel.analyze_project()
             return (
@@ -285,7 +349,6 @@ class Brain:
                 f"- Config Files: {', '.join(analysis.config_files)}"
             )
 
-        # Semantic Search Engine
         if lower.startswith("search code ") or lower.startswith("search todo"):
             if lower == "search todo" or lower == "search todos":
                 matches = self.search_engine.search_todos()
@@ -297,18 +360,15 @@ class Brain:
             lines = [f"{m.file_path}:{m.line_number} -> {m.line_content}" for m in matches[:15]]
             return "Search Results:\n" + "\n".join(lines)
 
-        # Document Reader
         if lower.startswith("read document ") or lower.startswith("parse doc "):
             path = prompt.split(" ", 2)[-1].strip()
             res = await self.tool_registry.execute_tool("doc_call", "document_reader", {"path": path})
             return res.output if res.success else f"Document error: {res.error}"
 
-        # Vision Screenshot
         if lower in ["capture screen", "screenshot", "take screenshot"]:
             res = await self.tool_registry.execute_tool("vis_call", "vision_capture", {})
             return res.output if res.success else f"Vision error: {res.error}"
 
-        # Process Manager / System Metrics
         if lower in ["metrics", "system metrics", "cpu usage", "ram usage"]:
             res = await self.tool_registry.execute_tool("proc_call", "process_manager", {"action": "metrics"})
             return res.output if res.success else f"Metrics error: {res.error}"
@@ -317,7 +377,6 @@ class Brain:
             res = await self.tool_registry.execute_tool("proc_call", "process_manager", {"action": "list"})
             return res.output if res.success else f"Process list error: {res.error}"
 
-        # Diagnostics & Health Check (Lazy import to prevent circular dependency)
         if lower in ["health check", "diagnostics", "system health"]:
             from cli.diagnostics import SelfDiagnostics
             report = SelfDiagnostics().run_health_check()
@@ -330,7 +389,6 @@ class Brain:
                 f"- Issues Found: {len(report.issues_found)}"
             )
 
-        # Standard File & Shell Triggers
         if lower.startswith("read ") and not lower.startswith("read this "):
             filename = prompt[5:].strip()
             res = await self.tool_registry.execute_tool("c1", "read_file", {"path": filename})
