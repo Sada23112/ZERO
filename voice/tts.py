@@ -46,11 +46,6 @@ class Pyttsx3TTSProvider(BaseTTSProvider):
 
     def __init__(self):
         self._engine = None
-        if PYTTSX3_AVAILABLE:
-            try:
-                self._engine = pyttsx3.init()
-            except Exception as e:
-                logger.warning(f"Failed to initialize pyttsx3 engine: {e}")
 
     @property
     def name(self) -> str:
@@ -58,29 +53,37 @@ class Pyttsx3TTSProvider(BaseTTSProvider):
 
     async def speak(self, text: str, voice_id: Optional[str] = None, speed: float = 1.0) -> None:
         """Synthesize and speak text via system sound output."""
-        if not text or not text.strip():
+        if not text or not text.strip() or not PYTTSX3_AVAILABLE:
             return
 
-        if not self._engine and PYTTSX3_AVAILABLE:
-            try:
-                self._engine = pyttsx3.init()
-            except Exception:
-                pass
+        loop = asyncio.get_running_loop()
 
-        if self._engine:
+        def _do_speak():
             try:
-                loop = asyncio.get_running_loop()
-                def _do_speak():
-                    if voice_id:
-                        self._engine.setProperty("voice", voice_id)
-                    rate = self._engine.getProperty("rate")
-                    self._engine.setProperty("rate", int(rate * speed))
-                    self._engine.say(text)
-                    self._engine.runAndWait()
+                try:
+                    import pythoncom
+                    pythoncom.CoInitialize()
+                except Exception:
+                    pass
 
-                await loop.run_in_executor(None, _do_speak)
+                engine = pyttsx3.init()
+                if voice_id:
+                    try:
+                        engine.setProperty("voice", voice_id)
+                    except Exception:
+                        pass
+                try:
+                    rate = engine.getProperty("rate")
+                    engine.setProperty("rate", int(rate * speed))
+                except Exception:
+                    pass
+                engine.say(text)
+                engine.runAndWait()
+                engine.stop()
             except Exception as err:
                 logger.warning(f"pyttsx3 speech synthesis error: {err}")
+
+        await loop.run_in_executor(None, _do_speak)
 
     def stop(self) -> None:
         """Immediately stop speech engine playback."""

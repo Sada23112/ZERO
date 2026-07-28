@@ -12,6 +12,8 @@ playwright>=1.40.0
 sounddevice>=0.4.6
 numpy>=1.26.0
 pyttsx3>=2.90
+SpeechRecognition>=3.10.0
+PyAudio>=0.2.14
 
 # Hardware, System, & Capability Expansion (Phase 4)
 psutil>=5.9.0

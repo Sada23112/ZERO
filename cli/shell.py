@@ -222,11 +222,11 @@ class ZeroShell:
 
         console.print("\n")
 
-        # Optionally speak response if voice is unmuted
+        # Optionally speak response if voice is unmuted (non-blocking task)
         complete_response = "".join(full_text)
         if not self.active_listener.muted and complete_response:
             try:
-                await self.voice_manager.tts_provider.speak(complete_response)
+                asyncio.create_task(self.voice_manager.tts_provider.speak(complete_response))
             except Exception:
                 pass
 
