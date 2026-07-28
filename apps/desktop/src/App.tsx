@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { OverlayHeader } from './components/OverlayHeader';
-import { ChatOverlay, ChatMessage } from './components/ChatOverlay';
+import { GlassPanel } from './components/GlassPanel';
+import { Toolbar, ViewMode } from './components/Toolbar';
+import { CommandInput } from './components/CommandInput';
+import { Workspace, WorkItem } from './components/Workspace';
 import { SettingsView } from './components/SettingsView';
+import { StatusMode } from './components/StatusIndicator';
 
 declare global {
   interface Window {
@@ -16,78 +19,133 @@ declare global {
 }
 
 export const App: React.FC = () => {
-  const [currentView, setCurrentView] = useState<'chat' | 'settings'>('chat');
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [activeView, setActiveView] = useState<ViewMode>('all');
+  const [inputText, setInputText] = useState('');
+  const [statusMode, setStatusMode] = useState<StatusMode>('idle');
   const [isStreaming, setIsStreaming] = useState(false);
+
+  // Work items state (structured artifacts)
+  const [workItems, setWorkItems] = useState<WorkItem[]>([
+    {
+      id: 'init_1',
+      type: 'text',
+      payload: { text: 'Project ZERO Operating Companion initialized. Press Alt + Space to toggle.' },
+      timestamp: new Date().toISOString(),
+    },
+  ]);
 
   useEffect(() => {
     if (window.zeroApi) {
       window.zeroApi.onNavigate((view) => {
-        if (view === 'settings' || view === 'chat') {
-          setCurrentView(view);
+        if (['all', 'engineering', 'research', 'memory', 'settings'].includes(view)) {
+          setActiveView(view as ViewMode);
         }
       });
     }
   }, []);
 
-  const handleSendMessage = (text: string) => {
-    const userMsg: ChatMessage = {
-      id: `msg_${Date.now()}`,
-      sender: 'user',
-      text,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    };
-
-    setMessages((prev) => [...prev, userMsg]);
-    setIsStreaming(true);
-
-    setTimeout(() => {
-      const zeroMsg: ChatMessage = {
-        id: `msg_${Date.now() + 1}`,
-        sender: 'zero',
-        text: `Project ZERO received: "${text}". Memory & Model Router initializing.`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
-      setMessages((prev) => [...prev, zeroMsg]);
-      setIsStreaming(false);
-    }, 600);
-  };
-
-  const handleHide = () => {
+  const handleDismiss = () => {
     if (window.zeroApi) {
       window.zeroApi.hideOverlay();
     }
   };
 
+  const handleExecutePrompt = async (promptText: string) => {
+    if (!promptText.trim()) return;
+
+    // 1. Append user prompt as work item
+    const userItem: WorkItem = {
+      id: `prompt_${Date.now()}`,
+      type: 'text',
+      payload: { text: `Query: ${promptText}` },
+      timestamp: new Date().toISOString(),
+    };
+
+    setWorkItems((prev) => [userItem, ...prev]);
+    setInputText('');
+    setStatusMode('thinking');
+    setIsStreaming(true);
+
+    // 2. Determine execution flow or simulate response structured artifact
+    setTimeout(() => {
+      setStatusMode('executing');
+
+      setTimeout(() => {
+        let responseItem: WorkItem;
+
+        if (promptText.toLowerCase().includes('code') || promptText.toLowerCase().includes('run') || promptText.toLowerCase().includes('test')) {
+          responseItem = {
+            id: `art_${Date.now()}`,
+            type: 'artifact',
+            payload: {
+              title: 'packages/core/src/chat-engine.ts',
+              language: 'typescript',
+              code: `export class ChatEngine {\n  constructor(private options: ChatEngineOptions) {}\n\n  async processUserMessage(chatId: string, userText: string): Promise<void> {\n    // Structured response streaming logic\n  }\n}`,
+            },
+            timestamp: new Date().toISOString(),
+          };
+        } else if (promptText.toLowerCase().includes('git') || promptText.toLowerCase().includes('diff')) {
+          responseItem = {
+            id: `diff_${Date.now()}`,
+            type: 'diff',
+            payload: {
+              filePath: 'apps/desktop/src/components/Workspace.tsx',
+              lines: [
+                { type: 'normal', content: 'export const Workspace = () => {' },
+                { type: 'delete', content: '  return <div className="old-dashboard" />' },
+                { type: 'add', content: '  return <GlassPanel className="expanded-workspace" />' },
+                { type: 'normal', content: '};' },
+              ],
+            },
+            timestamp: new Date().toISOString(),
+          };
+        } else {
+          responseItem = {
+            id: `text_${Date.now()}`,
+            type: 'text',
+            payload: { text: `Project ZERO executed query: "${promptText}". Response streaming active.` },
+            timestamp: new Date().toISOString(),
+          };
+        }
+
+        setWorkItems((prev) => [responseItem, ...prev]);
+        setStatusMode('idle');
+        setIsStreaming(false);
+      }, 400);
+    }, 300);
+  };
+
   return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100vh',
-        backgroundColor: '#0f172a',
-        borderRadius: '12px',
-        border: '1px solid #1e293b',
-        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4)',
-        overflow: 'hidden',
-      }}
-    >
-      <OverlayHeader
-        currentView={currentView}
-        onViewChange={(view) => setCurrentView(view)}
-        onHide={handleHide}
-      />
-      <div style={{ flex: 1, overflow: 'hidden' }}>
-        {currentView === 'chat' ? (
-          <ChatOverlay
-            messages={messages}
-            onSendMessage={handleSendMessage}
-            isStreaming={isStreaming}
-          />
-        ) : (
+    <div className="w-screen h-screen flex items-center justify-center p-3 select-none bg-transparent">
+      <GlassPanel className="w-full max-w-[760px] flex flex-col overflow-hidden shadow-2xl border border-white/10">
+        {/* Navigation & Status Header */}
+        <Toolbar
+          activeView={activeView}
+          onViewChange={setActiveView}
+          statusMode={statusMode}
+          onClose={handleDismiss}
+        />
+
+        {/* Command Search Bar */}
+        <CommandInput
+          value={inputText}
+          onChange={setInputText}
+          onSubmit={handleExecutePrompt}
+          onDismiss={handleDismiss}
+          isStreaming={isStreaming}
+        />
+
+        {/* Dynamic Workspace Container */}
+        {activeView === 'settings' ? (
           <SettingsView />
+        ) : (
+          <Workspace
+            activeView={activeView}
+            items={workItems}
+            onExecuteCommand={(cmd) => handleExecutePrompt(`run ${cmd}`)}
+          />
         )}
-      </div>
+      </GlassPanel>
     </div>
   );
 };
