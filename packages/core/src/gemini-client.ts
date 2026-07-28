@@ -1,4 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, GenerateContentParameters } from '@google/genai';
 
 export interface ChatTurn {
   role: 'user' | 'model';
@@ -15,7 +15,7 @@ export interface StreamCompletionOptions {
 }
 
 export class GeminiClient {
-  private defaultModel = 'gemini-1.5-pro';
+  private defaultModel = 'gemini-2.0-flash';
 
   async streamCompletion(options: StreamCompletionOptions): Promise<string> {
     const { apiKey, modelName = this.defaultModel, systemInstruction, history = [], prompt, onChunk } = options;
@@ -33,17 +33,20 @@ export class GeminiClient {
         { role: 'user', parts: [{ text: prompt }] },
       ];
 
-      const responseStream = await ai.models.generateContentStream({
+      const params: GenerateContentParameters = {
         model: modelName,
         contents,
-        config: systemInstruction
-          ? {
-              systemInstruction: {
-                parts: [{ text: systemInstruction }],
-              },
-            }
-          : undefined,
-      });
+      };
+
+      if (systemInstruction) {
+        params.config = {
+          systemInstruction: {
+            parts: [{ text: systemInstruction }],
+          },
+        };
+      }
+
+      const responseStream = await ai.models.generateContentStream(params);
 
       for await (const chunk of responseStream) {
         const text = chunk.text;

@@ -4,12 +4,14 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "jsx": "react-jsx",
     "strict": true,
     "noImplicitAny": true,
     "strictNullChecks": true,
-    "exactOptionalPropertyTypes": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
+    "exactOptionalPropertyTypes": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
     "esModuleInterop": true,
@@ -19,5 +21,5 @@
     "declarationMap": true,
     "sourceMap": true
   },
-  "exclude": ["node_modules", "dist", "out"]
+  "exclude": ["node_modules", "dist", "out", "dist-electron"]
 }

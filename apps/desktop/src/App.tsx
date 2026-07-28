@@ -8,6 +8,7 @@ declare global {
     zeroApi?: {
       getSettings: () => Promise<Record<string, unknown>>;
       saveSettings: (settings: Record<string, unknown>) => Promise<boolean>;
+      fetchModels?: (apiKey?: string) => Promise<Array<{ id: string; name: string }>>;
       hideOverlay: () => Promise<void>;
       onNavigate: (callback: (view: string) => void) => void;
     };
@@ -40,7 +41,6 @@ export const App: React.FC = () => {
     setMessages((prev) => [...prev, userMsg]);
     setIsStreaming(true);
 
-    // Simulated response for Milestone 3 UI verification
     setTimeout(() => {
       const zeroMsg: ChatMessage = {
         id: `msg_${Date.now() + 1}`,

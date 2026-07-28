@@ -24,7 +24,7 @@ function loadSettings() {
   }
   return {
     apiKey: '',
-    modelName: 'gemini-1.5-pro',
+    modelName: 'gemini-2.0-flash',
     autoLaunch: false,
     theme: 'dark',
   };
@@ -42,12 +42,38 @@ function saveSettings(settings: Record<string, unknown>) {
   }
 }
 
+async function fetchDynamicGeminiModels(apiKey: string) {
+  if (!apiKey || !apiKey.trim()) return [];
+  try {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey.trim()}`);
+    if (!res.ok) {
+      console.warn(`Gemini Models API returned HTTP ${res.status}`);
+      return [];
+    }
+    const data = (await res.json()) as { models?: Array<{ name: string; displayName?: string; supportedGenerationMethods?: string[] }> };
+    if (data && Array.isArray(data.models)) {
+      return data.models
+        .filter((m) => m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent'))
+        .map((m) => {
+          const id = m.name.replace('models/', '');
+          return {
+            id,
+            name: m.displayName ? `${m.displayName} (${id})` : id,
+          };
+        });
+    }
+  } catch (err) {
+    console.error('Dynamic Gemini model fetch failed:', err);
+  }
+  return [];
+}
+
 function createOverlayWindow(): BrowserWindow {
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
 
   const windowWidth = 720;
-  const windowHeight = 520;
+  const windowHeight = 560;
   const x = Math.round((screenWidth - windowWidth) / 2);
   const y = Math.round((screenHeight - windowHeight) / 3);
 
@@ -76,7 +102,6 @@ function createOverlayWindow(): BrowserWindow {
   }
 
   win.on('blur', () => {
-    // Hide window when focus is lost unless dev tools open
     if (!win.webContents.isDevToolsOpened()) {
       win.hide();
     }
@@ -87,7 +112,6 @@ function createOverlayWindow(): BrowserWindow {
 
 function createTray() {
   const iconPath = path.join(__dirname, '../resources/icon.png');
-  // Use a fallback empty image if icon file does not exist yet
   tray = new Tray(fs.existsSync(iconPath) ? iconPath : path.join(__dirname, 'preload.js'));
   tray.setToolTip('Project ZERO - Autonomous AI Companion');
 
@@ -139,7 +163,6 @@ function registerGlobalHotkeys() {
   }
 }
 
-// Setup IPC handlers
 function setupIpcHandlers() {
   ipcMain.handle('zero:get-settings', () => {
     return loadSettings();
@@ -154,6 +177,12 @@ function setupIpcHandlers() {
       });
     }
     return success;
+  });
+
+  ipcMain.handle('zero:fetch-models', async (_event, apiKey?: string) => {
+    const settings = loadSettings();
+    const keyToUse = apiKey || settings.apiKey;
+    return await fetchDynamicGeminiModels(keyToUse);
   });
 
   ipcMain.handle('zero:hide-overlay', () => {
@@ -180,7 +209,6 @@ app.on('will-quit', () => {
   globalShortcut.unregisterAll();
 });
 
-app.on('window-all-closed', (e: Event) => {
+app.on('window-all-closed', () => {
   // Prevent quitting on window close to stay running in system tray
-  e.preventDefault();
 });

@@ -1,5 +1,5 @@
 import { GeminiClient } from './gemini-client.js';
-import { ConversationManager, MemoryRetrievalEngine, StoredMessage } from '@zero/memory';
+import { ConversationManager, MemoryRetrievalEngine, StoredMessage, SearchResult } from '@zero/memory';
 import { PermissionGatekeeper } from '@zero/security';
 
 export interface ChatEngineOptions {
@@ -25,11 +25,11 @@ export class ChatEngine {
 
     // 2. Retrieve relevant memory context
     const searchResults = retrievalEngine.searchFullText(userText, 3);
-    const retrievedMemories = searchResults.map((r) => r.text);
+    const retrievedMemories = searchResults.map((r: SearchResult) => r.text);
 
     // 3. Assemble system instruction & history
     const allMessages = convManager.getMessages(chatId);
-    const history = allMessages.slice(0, -1).map((m) => ({
+    const history = allMessages.slice(0, -1).map((m: StoredMessage) => ({
       role: (m.sender === 'user' ? 'user' : 'model') as 'user' | 'model',
       parts: [{ text: m.text }],
     }));
