@@ -1,7 +1,7 @@
-"""Project ZERO — Central Brain Coordinator.
+"""Project ZERO — Central Brain Coordinator (Phase 5).
 
 The Brain is the central coordinator of Project ZERO.
-No CLI or client directly invokes providers or tools. All input flows through Brain.
+All inputs flow through Brain, which coordinates reasoning, memory retrieval, tool execution, and self-evolution.
 """
 
 import asyncio
@@ -23,6 +23,10 @@ from intelligence.notebook import ResearchNotebook
 from planner.task_manager import TaskManager
 from planner.engine import LongRunningPlanningEngine
 from security.failsafe import FailsafeSystem
+from evolution.engine import EvolutionEngine
+from evolution.capability_detector import CapabilityDetector
+from evolution.rollback import RollbackEngine
+from evolution.repair_engine import SelfRepairEngine
 from providers.gemini import GeminiProvider
 from providers.registry import ProviderRegistry, provider_registry
 from tools.registry import ToolRegistry, tool_registry
@@ -31,7 +35,7 @@ from zero_logging import logger
 
 
 class Brain:
-    """Central Coordinator for reasoning, memory retrieval, tool execution, and provider invocation."""
+    """Central Coordinator for reasoning, memory retrieval, tool execution, provider invocation, & self-evolution."""
 
     def __init__(
         self,
@@ -60,6 +64,12 @@ class Brain:
         self.prompt_library = PromptLibrary()
         self.session_replayer = SessionReplayer(self.conv_repo)
 
+        # Phase 5 Evolution Subsystems
+        self.evolution_engine = EvolutionEngine()
+        self.capability_detector = CapabilityDetector(self.evolution_engine.registry_store)
+        self.rollback_engine = RollbackEngine(registry_store=self.evolution_engine.registry_store)
+        self.repair_engine = SelfRepairEngine()
+
         # Provider initialization
         self.provider = GeminiProvider(self.settings.gemini_api_key)
         provider_registry.register_provider(self.provider)
@@ -68,7 +78,7 @@ class Brain:
         self.tool_registry = tool_registry
 
     async def process(self, prompt: str) -> str:
-        """Process user input through memory retrieval, context building, tool execution, and LLM reasoning."""
+        """Process user input through memory retrieval, tool execution, self-evolution, and LLM reasoning."""
         clean_prompt = prompt.strip()
         if not clean_prompt:
             return ""
@@ -78,12 +88,17 @@ class Brain:
         if memory_result is not None:
             return memory_result
 
-        # 2. Handle Explicit Tool & Capability Execution Triggers
+        # 2. Handle Phase 5 Self-Evolution & Self-Repair Commands
+        evolution_cmd_res = await self._check_evolution_commands(clean_prompt)
+        if evolution_cmd_res is not None:
+            return evolution_cmd_res
+
+        # 3. Handle Explicit Tool Triggers & Missing Capability Detection
         tool_result = await self._check_tool_triggers(clean_prompt)
         if tool_result is not None:
             return tool_result
 
-        # 3. Standard Cognitive Flow: Context Assembly & Provider Generation
+        # 4. Standard Cognitive Flow: Context Assembly & Provider Generation
         self.conversation_manager.append_message(
             role=MessageRole.USER,
             content=clean_prompt
@@ -118,6 +133,11 @@ class Brain:
             yield memory_res
             return
 
+        evo_cmd_res = await self._check_evolution_commands(clean_prompt)
+        if evo_cmd_res is not None:
+            yield evo_cmd_res
+            return
+
         tool_res = await self._check_tool_triggers(clean_prompt)
         if tool_res is not None:
             yield tool_res
@@ -146,6 +166,43 @@ class Brain:
             content=complete_text,
             model=self.settings.default_model
         )
+
+    async def _check_evolution_commands(self, prompt: str) -> Optional[str]:
+        """Intercept and handle Phase 5 Evolution, Rollback, & Self-Repair commands."""
+        lower = prompt.lower().strip()
+
+        # Rollback Commands
+        if lower == "rollback last evolution":
+            success = self.rollback_engine.rollback_last_evolution()
+            return "Successfully rolled back last capability evolution." if success else "No active evolutions to rollback."
+
+        if lower.startswith("rollback capability "):
+            cap_name = lower.replace("rollback capability ", "").replace("rollback ", "").strip()
+            success = self.rollback_engine.rollback_capability(cap_name)
+            return f"Successfully rolled back capability '{cap_name}'." if success else f"Capability '{cap_name}' not found."
+
+        # Audit History & Capability Listing
+        if lower in ["show evolution history", "evolution history"]:
+            recs = self.evolution_engine.history_store.records
+            if not recs:
+                return "Evolution history is empty."
+            lines = [f"- [{r.record_id}] {r.action_type.upper()} {r.capability_name}: {r.status} ({r.user_prompt})" for r in recs]
+            return "Evolution History Log:\n" + "\n".join(lines)
+
+        if lower in ["show generated capabilities", "list dynamic capabilities"]:
+            caps = self.evolution_engine.registry_store.list_capabilities()
+            if not caps:
+                return "No dynamically generated capabilities currently active."
+            lines = [f"- {c.name} v{c.version}: {c.description}" for c in caps]
+            return "Dynamically Generated Active Capabilities:\n" + "\n".join(lines)
+
+        # Self-Repair Commands
+        if lower.startswith("repair ") or lower in ["repair yourself", "fix yourself"]:
+            target = lower.replace("repair ", "").strip()
+            report = self.repair_engine.repair_subsystem(target)
+            return f"Self-Repair Report for {report.target_subsystem}:\n- Issue: {report.issue_detected}\n- Status: {report.message}"
+
+        return None
 
     async def _check_memory_triggers(self, prompt: str) -> Optional[str]:
         """Intercept and handle memory commands & knowledge graph queries."""
@@ -198,8 +255,17 @@ class Brain:
         return None
 
     async def _check_tool_triggers(self, prompt: str) -> Optional[str]:
-        """Intercept and route explicit tool & capability requests."""
+        """Intercept and route explicit tool & capability requests or trigger self-evolution."""
         lower = prompt.lower()
+
+        # Phase 5 Meta-Reasoning Capability Detection
+        det_res = self.capability_detector.detect_capability(prompt)
+        if det_res.action_type == "generate_new" and det_res.tool_name:
+            evo_res = await self.evolution_engine.evolve_capability(det_res.tool_name, prompt)
+            if evo_res.success:
+                return f"[{evo_res.message}]\n{evo_res.output}"
+            else:
+                return f"Evolution failed: {evo_res.message}"
 
         # Git Intelligence
         if lower.startswith("git ") or lower == "git":
