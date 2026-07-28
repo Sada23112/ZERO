@@ -1,25 +1,43 @@
-# Node & pnpm
-node_modules/
-.pnpm-debug.log*
-
-# Build outputs
-dist/
-dist-electron/
-out/
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
 build/
-*.d.ts
-*.d.ts.map
-*.js.map
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# Operating System & IDE
+# Database & Data
+*.db
+*.sqlite
+*.sqlite3
+data/*.db
+data/*.sqlite
+
+# Environment & Local Secrets
+.env
+.env.local
+
+# IDEs & System
+.idea/
+.vscode/
+*.swp
 .DS_Store
 Thumbs.db
-.vscode/
-.idea/
-
-# Local databases & user data
-zero.db*
-test_zero_*.db
-zero-settings.json
-*.local
-.env

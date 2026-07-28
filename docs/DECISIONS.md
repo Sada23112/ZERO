@@ -44,3 +44,11 @@ This document records the major architectural decisions made for Project ZERO, i
 - **Context**: Opaque vector-only databases lack structured transactional history and deterministic full-text search.
 - **Decision**: Implement a 4-tier memory architecture using SQLite (WAL mode) for episodic logs, Qdrant/LanceDB for vector embeddings, and KuzuDB for entity relationships.
 - **Justification**: Provides exact keyword search, dense semantic similarity, and property graph traversals without data corruption.
+
+---
+
+## ADR-006: Architectural Reboot to Python-First Intelligence Foundation
+- **Date**: 2026-07-28
+- **Context**: The initial prototype drifted into UI/presentation layer complexity (Electron/React/Tailwind) at the expense of core intelligence, agent planning, and cognitive reasoning.
+- **Decision**: Completely discard the TypeScript/React/Electron prototype. Reboot the codebase onto a clean, modular Python-first architecture (`core/`, `agents/`, `brain/`, `memory/`, `planner/`, `tools/`, `providers/`, `config/`).
+- **Justification**: Shift focus 100% to core AI capability, multi-step planning, memory retrieval, and tool orchestration before layering any UI assumptions.
