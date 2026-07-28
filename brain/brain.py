@@ -109,15 +109,15 @@ class Brain:
         self.context_manager.session_context.record_activity(clean_prompt)
         self.context_manager.activity_logger.log_event("command", clean_prompt)
 
-        # 0. Handle Phase 8 Dynamic Capability & Reconfiguration Commands
-        cap_cmd_res = self.capability_manager.process_capability_command(clean_prompt)
-        if cap_cmd_res is not None:
-            return cap_cmd_res
-
         # 1. Handle Phase 7 Operating System Intelligence Commands
         os_intel_res = await self._check_os_intelligence_triggers(clean_prompt)
         if os_intel_res is not None:
             return os_intel_res
+
+        # 2. Handle Phase 8 Dynamic Capability & Reconfiguration Commands
+        cap_cmd_res = self.capability_manager.process_capability_command(clean_prompt)
+        if cap_cmd_res is not None:
+            return cap_cmd_res
 
         # 2. Handle Phase 6 Awareness & Natural References Triggers
         awareness_res = await self._check_awareness_triggers(clean_prompt)
