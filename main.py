@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
 """Project ZERO — Personal Autonomous Intelligence Platform.
 
-Entrypoint for CLI, daemon execution, and core architecture bootstrap.
+Entrypoint for interactive terminal shell and CLI execution.
 """
 
 import sys
+import asyncio
+from cli.shell import ZeroShell
 
 
 def main() -> None:
-    print("Project ZERO v0.1.0 — Python Core Foundation")
-    print("Repository structure initialized successfully.")
-    print("Awaiting user approval before feature implementation.")
+    """Launch Project ZERO interactive shell."""
+    try:
+        shell = ZeroShell()
+        asyncio.run(shell.run())
+    except KeyboardInterrupt:
+        print("\nSession ended.")
+        sys.exit(0)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,7 @@
-"""Project ZERO — Provider Integration Layer.
+"""Project ZERO — Provider Package."""
 
-Handles LLM provider communication (Google Gemini API, model discovery, streaming client handlers).
-"""
+from providers.base import BaseProvider
+from providers.gemini import GeminiProvider
+from providers.registry import ProviderRegistry, provider_registry
+
+__all__ = ["BaseProvider", "GeminiProvider", "ProviderRegistry", "provider_registry"]

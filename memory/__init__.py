@@ -1,4 +1,6 @@
-"""Project ZERO — Memory Subsystem.
+"""Project ZERO — Memory Subsystem Package."""
 
-Provides persistent SQLite episodic memory, key-value storage, and vector retrieval.
-"""
+from memory.database import DatabaseManager
+from memory.repository import ConversationRepository, MemoryRepository
+
+__all__ = ["DatabaseManager", "ConversationRepository", "MemoryRepository"]
