@@ -38,6 +38,13 @@ data/*.sqlite
 # Environment & Local Secrets
 .env
 .env.local
+*.key
+*.enc
+data/*.key
+data/*.enc
+data/account_preferences.json
+data/connected_accounts.json
+scratch/
 
 # IDEs & System
 .idea/
@@ -45,3 +52,4 @@ data/*.sqlite
 *.swp
 .DS_Store
 Thumbs.db
+
